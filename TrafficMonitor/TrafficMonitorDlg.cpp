@@ -805,6 +805,11 @@ void CTrafficMonitorDlg::ApplySettings(COptionsDlg& optionsDlg)
 #ifndef WITHOUT_TEMPERATURE
     if (is_hardware_monitor_item_changed)
     {
+        // 重置硬件监控错误状态，允许用户在解决问题后重新启用
+        m_hardware_monitor_error_cnt = 0;
+        m_hardware_monitor_error_shown = false;
+        m_hardware_monitor_disabled_by_error = false;
+
         //如果关闭了硬件监控，则析构硬件监控类
         if (theApp.m_general_data.hardware_monitor_item == 0)
         {
@@ -1422,10 +1427,11 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
 
 #ifndef WITHOUT_TEMPERATURE
     //获取温度
-    if (IsTemperatureNeeded() && theApp.m_pMonitor != nullptr)
+    if (IsTemperatureNeeded() && theApp.m_pMonitor != nullptr && !m_hardware_monitor_disabled_by_error)
     {
         CSingleLock sync(&theApp.m_minitor_lib_critical, TRUE);
         CString error_info = CCommon::LoadText(IDS_HARDWARE_INFO_ACQUIRE_FAILED_ERROR);
+        bool hardware_info_error = false;
 
         auto getHardwareInfo = [&]() {
             __try
@@ -1434,7 +1440,7 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
-                AfxMessageBox(error_info, MB_ICONERROR | MB_OK);
+                hardware_info_error = true;
             }
         };
 
@@ -1442,8 +1448,59 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         auto monitor_error_message{ OpenHardwareMonitorApi::GetErrorMessage() };
         if (!monitor_error_message.empty())
         {
-            AfxMessageBox(monitor_error_message.c_str(), MB_ICONERROR | MB_OK);
+            hardware_info_error = true;
         }
+
+        if (hardware_info_error)
+        {
+            m_hardware_monitor_error_cnt++;
+            // 写入日志
+            CString log_info;
+            log_info.Format(_T("Hardware monitor error count: %d/%d"), m_hardware_monitor_error_cnt, MAX_HARDWARE_MONITOR_ERRORS);
+            CCommon::WriteLog(log_info, theApp.m_log_path.c_str());
+
+            if (!monitor_error_message.empty())
+            {
+                CCommon::WriteLog(CString(monitor_error_message.c_str()), theApp.m_log_path.c_str());
+            }
+
+            // 只在第一次错误时弹出提示
+            if (!m_hardware_monitor_error_shown)
+            {
+                CString msg;
+                if (!monitor_error_message.empty())
+                {
+                    msg = monitor_error_message.c_str();
+                }
+                else
+                {
+                    msg = error_info;
+                }
+                AfxMessageBox(msg, MB_ICONERROR | MB_OK);
+                m_hardware_monitor_error_shown = true;
+            }
+
+            // 连续错误达到阈值后自动禁用硬件监控
+            if (m_hardware_monitor_error_cnt >= MAX_HARDWARE_MONITOR_ERRORS)
+            {
+                m_hardware_monitor_disabled_by_error = true;
+                CString disable_msg = CCommon::LoadText(_T("Hardware monitoring has been automatically disabled due to persistent errors.\n")
+                    _T("You can re-enable it in Options after resolving the issue (e.g., updating GPU driver)."));
+                CCommon::WriteLog(disable_msg, theApp.m_log_path.c_str());
+                AfxMessageBox(disable_msg, MB_ICONWARNING | MB_OK);
+            }
+        }
+        else
+        {
+            // 成功时重置错误计数器
+            if (m_hardware_monitor_error_cnt > 0)
+            {
+                m_hardware_monitor_error_cnt = 0;
+                m_hardware_monitor_error_shown = false;
+            }
+        }
+
+        // 即使有错误也继续获取数据（可能是部分硬件有问题）
         //theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
         theApp.m_gpu_temperature = theApp.m_pMonitor->GpuTemperature();
         //theApp.m_hdd_temperature = theApp.m_pMonitor->HDDTemperature();
