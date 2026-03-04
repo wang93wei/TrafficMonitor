@@ -52,6 +52,10 @@ TrafficMonitor/
 
 ### 使用命令行构建
 
+#### 方法一：使用 Developer Command Prompt（推荐）
+
+打开 "Developer Command Prompt for VS 2022" 或 "x64 Native Tools Command Prompt for VS 2022"，然后执行：
+
 ```powershell
 # x64 Release 版本
 msbuild -p:configuration=release -p:platform=x64
@@ -65,6 +69,30 @@ msbuild -p:configuration=release -p:platform=ARM64EC
 # Lite 版本（无温度监控，不需要管理员权限）
 msbuild -p:configuration="Release (lite)" -p:platform=x64
 ```
+
+#### 方法二：使用 MSBuild 完整路径
+
+如果 MSBuild 未添加到 PATH，可以使用完整路径：
+
+```powershell
+# 设置 MSBuild 路径（根据实际安装位置调整）
+$MSBuild = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe"
+
+# x64 Release 版本
+& $MSBuild -p:configuration=release -p:platform=x64
+
+# x86 Release 版本
+& $MSBuild -p:configuration=release -p:platform=x86
+
+# Lite 版本
+& $MSBuild -p:configuration="Release (lite)" -p:platform=x64
+```
+
+常见 MSBuild 安装位置：
+- VS 2022 BuildTools: `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\amd64\MSBuild.exe`
+- VS 2022 Community: `C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe`
+- VS 2022 Professional: `C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe`
+- VS 2022 Enterprise: `C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe`
 
 ### 构建配置说明
 
