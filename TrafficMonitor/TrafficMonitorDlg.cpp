@@ -2924,6 +2924,14 @@ LRESULT CTrafficMonitorDlg::OnDisplaychange(WPARAM wParam, LPARAM lParam)
 {
     GetScreenSize();
     CheckWindowPos(true);
+
+    // 分辨率变化后重新初始化任务栏窗口，防止任务栏窗口消失或崩溃
+    // 分辨率变化可能导致任务栏窗口句柄失效或位置计算错误
+    if (IsTaskbarWndValid())
+    {
+        CloseTaskBarWnd();
+        OpenTaskBarWnd();
+    }
     return 0;
 }
 
