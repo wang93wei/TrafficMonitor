@@ -1362,12 +1362,7 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     bool gpu_usage_acquired = false;
     m_get_disk_usage_by_pdh = false;
 
-    theApp.m_cpu_temperature = -1;
-    theApp.m_gpu_temperature = -1;
-    theApp.m_hdd_temperature = -1;
-    theApp.m_main_board_temperature = -1;
-    theApp.m_gpu_usage = -1;
-    theApp.m_hdd_usage = -1;
+    // 不再每次都重置为-1，而是通过失败计数器来决定是否显示"--"
 
     //获取CPU使用率
     if (lite_version || theApp.m_general_data.cpu_usage_acquire_method != GeneralSettingData::CA_HARDWARE_MONITOR || !theApp.m_general_data.IsHardwareEnable(HI_CPU))
@@ -1501,56 +1496,147 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         }
 
         // 即使有错误也继续获取数据（可能是部分硬件有问题）
-        //theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
-        theApp.m_gpu_temperature = theApp.m_pMonitor->GpuTemperature();
-        //theApp.m_hdd_temperature = theApp.m_pMonitor->HDDTemperature();
-        theApp.m_main_board_temperature = theApp.m_pMonitor->MainboardTemperature();
-        if (!gpu_usage_acquired)
-            theApp.m_gpu_usage = theApp.m_pMonitor->GpuUsage();
-        if (!cpu_freq_acquired)
-            theApp.m_cpu_freq = theApp.m_pMonitor->CpuFreq();
-        if (!cpu_usage_acquired)
-            theApp.m_cpu_usage = theApp.m_pMonitor->CpuUsage();
-        //获取CPU温度
-        if (!theApp.m_pMonitor->AllCpuTemperature().empty())
+        // 使用失败计数器：只有连续失败达到阈值才显示"--"
+
+        // 获取显卡温度
         {
-            if (theApp.m_general_data.cpu_core_name == CCommon::LoadText(IDS_AVREAGE_TEMPERATURE).GetString())  //如果选择了平均温度
+            float gpu_temp = theApp.m_pMonitor->GpuTemperature();
+            if (gpu_temp > 0)
             {
-                theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
+                theApp.m_gpu_temperature = gpu_temp;
+                m_gpu_temp_fail_cnt = 0;
             }
             else
             {
-                auto iter = theApp.m_pMonitor->AllCpuTemperature().find(theApp.m_general_data.cpu_core_name);
-                if (iter == theApp.m_pMonitor->AllCpuTemperature().end())
-                {
-                    iter = theApp.m_pMonitor->AllCpuTemperature().begin();
-                    theApp.m_general_data.cpu_core_name = iter->first;
-                }
-                theApp.m_cpu_temperature = iter->second;
+                m_gpu_temp_fail_cnt++;
+                if (m_gpu_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_gpu_temperature = -1;
             }
         }
-        else
+
+        // 获取主板温度
         {
-            theApp.m_cpu_temperature = -1;
-        }
-        //获取硬盘温度
-        if (!theApp.m_pMonitor->AllHDDTemperature().empty())
-        {
-            auto iter = theApp.m_pMonitor->AllHDDTemperature().find(theApp.m_general_data.hard_disk_name);
-            if (iter == theApp.m_pMonitor->AllHDDTemperature().end())
+            float mainboard_temp = theApp.m_pMonitor->MainboardTemperature();
+            if (mainboard_temp > 0)
             {
-                iter = theApp.m_pMonitor->AllHDDTemperature().begin();
-                theApp.m_general_data.hard_disk_name = iter->first;
+                theApp.m_main_board_temperature = mainboard_temp;
+                m_mainboard_temp_fail_cnt = 0;
             }
-            theApp.m_hdd_temperature = iter->second;
+            else
+            {
+                m_mainboard_temp_fail_cnt++;
+                if (m_mainboard_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_main_board_temperature = -1;
+            }
         }
-        else
+
+        // 获取显卡利用率
+        if (!gpu_usage_acquired)
         {
-            theApp.m_hdd_temperature = -1;
+            int gpu_usage = theApp.m_pMonitor->GpuUsage();
+            if (gpu_usage >= 0)
+            {
+                theApp.m_gpu_usage = gpu_usage;
+                m_gpu_usage_fail_cnt = 0;
+            }
+            else
+            {
+                m_gpu_usage_fail_cnt++;
+                if (m_gpu_usage_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_gpu_usage = -1;
+            }
         }
-        //获取硬盘利用率
+
+        // 获取CPU频率
+        if (!cpu_freq_acquired)
+        {
+            float cpu_freq = theApp.m_pMonitor->CpuFreq();
+            if (cpu_freq > 0)
+            {
+                theApp.m_cpu_freq = cpu_freq;
+                m_cpu_freq_fail_cnt = 0;
+            }
+            else
+            {
+                m_cpu_freq_fail_cnt++;
+                if (m_cpu_freq_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_cpu_freq = -1;
+            }
+        }
+
+        // 获取CPU利用率
+        if (!cpu_usage_acquired)
+        {
+            int cpu_usage = theApp.m_pMonitor->CpuUsage();
+            if (cpu_usage >= 0)
+            {
+                theApp.m_cpu_usage = cpu_usage;
+            }
+        }
+
+        // 获取CPU温度
+        {
+            float cpu_temp = -1;
+            if (!theApp.m_pMonitor->AllCpuTemperature().empty())
+            {
+                if (theApp.m_general_data.cpu_core_name == CCommon::LoadText(IDS_AVREAGE_TEMPERATURE).GetString())  //如果选择了平均温度
+                {
+                    cpu_temp = theApp.m_pMonitor->CpuTemperature();
+                }
+                else
+                {
+                    auto iter = theApp.m_pMonitor->AllCpuTemperature().find(theApp.m_general_data.cpu_core_name);
+                    if (iter == theApp.m_pMonitor->AllCpuTemperature().end())
+                    {
+                        iter = theApp.m_pMonitor->AllCpuTemperature().begin();
+                        theApp.m_general_data.cpu_core_name = iter->first;
+                    }
+                    cpu_temp = iter->second;
+                }
+            }
+            if (cpu_temp > 0)
+            {
+                theApp.m_cpu_temperature = cpu_temp;
+                m_cpu_temp_fail_cnt = 0;
+            }
+            else
+            {
+                m_cpu_temp_fail_cnt++;
+                if (m_cpu_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_cpu_temperature = -1;
+            }
+        }
+
+        // 获取硬盘温度
+        {
+            float hdd_temp = -1;
+            if (!theApp.m_pMonitor->AllHDDTemperature().empty())
+            {
+                auto iter = theApp.m_pMonitor->AllHDDTemperature().find(theApp.m_general_data.hard_disk_name);
+                if (iter == theApp.m_pMonitor->AllHDDTemperature().end())
+                {
+                    iter = theApp.m_pMonitor->AllHDDTemperature().begin();
+                    theApp.m_general_data.hard_disk_name = iter->first;
+                }
+                hdd_temp = iter->second;
+            }
+            if (hdd_temp > 0)
+            {
+                theApp.m_hdd_temperature = hdd_temp;
+                m_hdd_temp_fail_cnt = 0;
+            }
+            else
+            {
+                m_hdd_temp_fail_cnt++;
+                if (m_hdd_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_hdd_temperature = -1;
+            }
+        }
+
+        // 获取硬盘利用率
         if (!m_get_disk_usage_by_pdh)
         {
+            int hdd_usage = -1;
             if (!theApp.m_pMonitor->AllHDDUsage().empty())
             {
                 auto iter = theApp.m_pMonitor->AllHDDUsage().find(theApp.m_general_data.hard_disk_name);
@@ -1559,13 +1645,47 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                     iter = theApp.m_pMonitor->AllHDDUsage().begin();
                     theApp.m_general_data.hard_disk_name = iter->first;
                 }
-                theApp.m_hdd_usage = iter->second;
+                hdd_usage = iter->second;
+            }
+            if (hdd_usage >= 0)
+            {
+                theApp.m_hdd_usage = hdd_usage;
+                m_hdd_usage_fail_cnt = 0;
             }
             else
             {
-                theApp.m_hdd_usage = -1;
+                m_hdd_usage_fail_cnt++;
+                if (m_hdd_usage_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+                    theApp.m_hdd_usage = -1;
             }
         }
+    }
+    else if (IsTemperatureNeeded() && theApp.m_pMonitor == nullptr)
+    {
+        // OpenHardwareMonitor 正在初始化中，增加所有失败计数器
+        m_gpu_temp_fail_cnt++;
+        m_gpu_usage_fail_cnt++;
+        m_cpu_temp_fail_cnt++;
+        m_hdd_temp_fail_cnt++;
+        m_mainboard_temp_fail_cnt++;
+        m_hdd_usage_fail_cnt++;
+        m_cpu_freq_fail_cnt++;
+
+        // 只有连续失败达到阈值才设为-1
+        if (m_gpu_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_gpu_temperature = -1;
+        if (m_gpu_usage_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_gpu_usage = -1;
+        if (m_cpu_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_cpu_temperature = -1;
+        if (m_hdd_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_hdd_temperature = -1;
+        if (m_mainboard_temp_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_main_board_temperature = -1;
+        if (m_hdd_usage_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_hdd_usage = -1;
+        if (m_cpu_freq_fail_cnt >= MAX_ITEM_FAIL_COUNT)
+            theApp.m_cpu_freq = -1;
     }
 #endif
 

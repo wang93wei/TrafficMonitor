@@ -140,6 +140,16 @@ protected:
     bool m_hardware_monitor_error_shown{ false };   //是否已经显示过硬件监控错误提示
     bool m_hardware_monitor_disabled_by_error{ false };  //是否因连续错误而禁用了硬件监控
     static const int MAX_HARDWARE_MONITOR_ERRORS = 5;    //连续错误达到此数值后自动禁用硬件监控
+
+    // 各监控项的连续失败计数器
+    int m_gpu_temp_fail_cnt{ 0 };       //显卡温度连续失败计数
+    int m_gpu_usage_fail_cnt{ 0 };      //显卡利用率连续失败计数
+    int m_cpu_temp_fail_cnt{ 0 };       //CPU温度连续失败计数
+    int m_hdd_temp_fail_cnt{ 0 };       //硬盘温度连续失败计数
+    int m_mainboard_temp_fail_cnt{ 0 }; //主板温度连续失败计数
+    int m_hdd_usage_fail_cnt{ 0 };      //硬盘利用率连续失败计数
+    int m_cpu_freq_fail_cnt{ 0 };       //CPU频率连续失败计数
+    static const int MAX_ITEM_FAIL_COUNT = 3;  //单项连续失败达到此数值后才显示"--"
 #endif
 public:
     void ExitMonitorThread();       //停止监控线程
