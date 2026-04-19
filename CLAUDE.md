@@ -9,10 +9,9 @@ TrafficMonitor is a Windows desktop network speed monitoring utility built with 
 ## Build System
 
 - **Toolchain**: Visual Studio 2022 (v17+), MSVC v143 toolset
-- **Solution**: `TrafficMonitor.sln` containing 3 projects:
-  - `TrafficMonitor` — main application (MFC dialog-based)
-  - `OpenHardwareMonitorApi` — hardware monitoring library wrapping LibreHardwareMonitor
-  - `PluginDemo` — sample plugin DLL
+- **Solutions**:
+  - `TrafficMonitor.sln` — full solution with 3 projects: `TrafficMonitor` (main app), `OpenHardwareMonitorApi` (hardware monitoring), `PluginDemo` (sample plugin)
+  - `TrafficMonitor_Lite.sln` — lite solution with 2 projects: `TrafficMonitor`, `PluginDemo` (no OpenHardwareMonitorApi)
 
 ### Build Configurations
 
@@ -24,24 +23,21 @@ TrafficMonitor is a Windows desktop network speed monitoring utility built with 
 ### Build Commands (MSBuild)
 
 ```bash
-# Standard x64 release
-msbuild -p:configuration=release -p:platform=x64 -p:platformToolset=v143
+# Standard x64 release (from TrafficMonitor.sln)
+msbuild TrafficMonitor.sln -p:configuration=release -p:platform=x64 -p:platformToolset=v143
 
-# Lite x64 release (no hardware monitoring)
-msbuild -p:configuration="release (lite)" -p:platform=x64 -p:platformToolset=v143
+# Lite x64 release (from TrafficMonitor_Lite.sln)
+msbuild TrafficMonitor_Lite.sln -p:configuration="release (lite)" -p:platform=x64 -p:platformToolset=v143
 
-# Standard x86 debug
-msbuild -p:configuration=debug -p:platform=x86 -p:platformToolset=v143
-
-# ARM64EC
-msbuild -p:configuration=release -p:platform=ARM64EC -p:platformToolset=v143
+# ARM64EC lite release
+msbuild TrafficMonitor_Lite.sln -p:configuration="release (lite)" -p:platform=ARM64EC -p:platformToolset=v143
 ```
 
-Build output goes to `Bin/{platform}/{configuration}/`.
+Supported platforms: x86, x64, ARM64EC. Build output goes to `Bin/{platform}/{configuration}/`.
 
 ### CI
 
-GitHub Actions (`.github/workflows/main.yml`) builds x64, x86, and ARM64EC release configurations on push.
+GitHub Actions (`.github/workflows/main.yml`) builds Lite release for x64, x86, and ARM64EC. Triggers on tag push (`v*`) and manual workflow dispatch.
 
 ## Architecture
 
@@ -75,7 +71,8 @@ Standard builds use both backends. Lite builds (`WITHOUT_TEMPERATURE`) exclude L
 ### Plugin System
 
 - `CPluginManager` — loads DLL plugins from `plugins/` directory at runtime
-- Plugin interface: `ITMPlugin` (plugin) + `IPluginItem` (display items)
+- Plugin interface: `ITMPlugin` (plugin, API version 7) + `IPluginItem` (display items)
+- `ITrafficMonitor` — host program interface exposed to plugins
 - Plugin display items integrate alongside built-in `DisplayItem` enum items
 - See `PluginDemo/` for a sample plugin implementation
 
@@ -110,6 +107,11 @@ Built-in display items defined in `DisplayItem.h` enum `DisplayItem`: `TDI_UP`, 
 ## Key Patterns
 
 - `WITHOUT_TEMPERATURE` preprocessor guard controls hardware monitoring feature inclusion across many files
-- Custom Windows messages (WM_USER+10xx) for inter-component communication (defined in stdafx.h)
+- Custom Windows messages for inter-component communication (defined in stdafx.h):
+  - `MY_WM_NOTIFYICON` (WM_USER+1005) — notification icon events
+  - `WM_TASKBAR_WND_CLOSED` (WM_USER+1006) — taskbar window closed
+  - `WM_MONITOR_INFO_UPDATED` (WM_USER+1007) — monitor info updated
+  - `WM_REOPEN_TASKBAR_WND` (WM_USER+1008) — reopen taskbar window
+  - `WM_SETTINGS_APPLIED` (WM_USER+1009) — settings applied from options dialog
 - MFC dialog-based architecture with multiple modeless dialogs (main window, taskbar window, options)
 - Timer-driven polling: `MAIN_TIMER`, `TASKBAR_TIMER`, `MONITOR_TIMER` for periodic data updates
