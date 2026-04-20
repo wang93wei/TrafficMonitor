@@ -3,6 +3,27 @@
 #include "Common.h"
 #include "TrafficMonitor.h"
 
+namespace
+{
+    CString GpuMemoryToString(long long used_bytes, long long total_bytes, bool with_space)
+    {
+        if (used_bytes < 0)
+            return _T("--");
+
+        constexpr double one_gb = 1024.0 * 1024.0 * 1024.0;
+        CString str_value;
+        if (total_bytes > 0)
+            str_value.Format(_T("%.2f/%.2f"), used_bytes / one_gb, total_bytes / one_gb);
+        else
+            str_value.Format(_T("%.2f"), used_bytes / one_gb);
+
+        if (with_space)
+            str_value += _T(' ');
+        str_value += _T("GB");
+        return str_value;
+    }
+}
+
 CommonDisplayItem::CommonDisplayItem(DisplayItem item)
 {
     is_plugin = false;
@@ -275,10 +296,7 @@ CString CommonDisplayItem::GetItemValueText(bool is_main_window) const
             break;
         //显存占用
         case TDI_GPU_MEMORY:
-            if (theApp.m_gpu_memory < 0)
-                str_value = _T("--");
-            else
-                str_value = CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), cfg_data->separate_value_unit_with_space);
+            str_value = GpuMemoryToString(theApp.m_gpu_memory, theApp.m_gpu_memory_total, cfg_data->separate_value_unit_with_space);
             break;
         default:
             break;
@@ -324,7 +342,7 @@ CString CommonDisplayItem::GetItemValueSampleText(bool is_main_window) const
             sample_str = _T("1.0 GHz");
             break;
         case TDI_GPU_MEMORY:
-            sample_str = _T("8.00 GB");
+            sample_str = _T("3.25/8.00 GB");
             break;
         default:
             sample_str = _T("99");
@@ -423,9 +441,9 @@ CString CommonDisplayItem::GetItemValueSampleText(bool is_main_window) const
         case TDI_GPU_MEMORY:
         {
             if (theApp.m_taskbar_data.separate_value_unit_with_space)
-                sample_str = _T("999.99 GB");
+                sample_str = _T("999.99/999.99 GB");
             else
-                sample_str = _T("999.99GB");
+                sample_str = _T("999.99/999.99GB");
         }
             break;
         }

@@ -11,4 +11,8 @@ public:
     // 获取专用显存占用（单位：字节）
     // 返回值: true=成功, false=失败
     bool GetGpuMemoryUsage(/*out*/ unsigned long long& usage);
+
+    // 获取专用显存总量/上限（单位：字节）
+    // 返回值: true=成功, false=失败
+    bool GetGpuMemoryLimit(/*out*/ unsigned long long& limit);
 };

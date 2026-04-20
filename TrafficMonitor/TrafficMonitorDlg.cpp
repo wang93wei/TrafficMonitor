@@ -177,7 +177,7 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_FREQ), CCommon::FreqToString(theApp.m_cpu_freq, theApp.m_main_wnd_data));
         tip_info += temp;
     }
-    if (!skin_layout.GetItem(TDI_GPU_USAGE).show && theApp.m_gpu_usage >= 0)
+    if (theApp.m_gpu_usage >= 0)
     {
         temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
         tip_info += temp;
@@ -185,7 +185,7 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
     if (theApp.m_gpu_memory >= 0)
     {
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
-            CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), theApp.m_main_wnd_data.separate_value_unit_with_space));
+            CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(true));
         tip_info += temp;
     }
 #ifndef WITHOUT_TEMPERATURE
@@ -671,7 +671,7 @@ void CTrafficMonitorDlg::UpdateNotifyIconTip()
         if (theApp.m_gpu_memory >= 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%>"), {
                 CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
-                CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), theApp.m_main_wnd_data.separate_value_unit_with_space) });
+                CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(true) });
         if (theApp.m_general_data.IsHardwareEnable(HI_CPU) && theApp.m_cpu_temperature > 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%> °C"), { CCommon::LoadText(IDS_CPU_TEMPERATURE), static_cast<int>(theApp.m_cpu_temperature) });
         if (theApp.m_general_data.IsHardwareEnable(HI_GPU) && theApp.m_gpu_temperature > 0)
@@ -1390,6 +1390,13 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         theApp.m_gpu_memory = static_cast<long long>(gpu_memory_usage);
     else
         theApp.m_gpu_memory = -1;
+    // 显存总量通常是固定值，首次成功获取后直接复用。
+    if (theApp.m_gpu_memory_total < 0)
+    {
+        unsigned long long gpu_memory_limit{};
+        if (m_gpu_memory_helper.GetGpuMemoryLimit(gpu_memory_limit))
+            theApp.m_gpu_memory_total = static_cast<long long>(gpu_memory_limit);
+    }
 
     //获取硬盘利用率
     if (lite_version /*|| is_arm64ec*/ || !theApp.m_general_data.IsHardwareEnable(HI_HDD))
