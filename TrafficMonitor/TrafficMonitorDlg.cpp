@@ -182,7 +182,7 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
         tip_info += temp;
     }
-    if (!skin_layout.GetItem(TDI_GPU_MEMORY).show && theApp.m_gpu_memory >= 0)
+    if (theApp.m_gpu_memory >= 0)
     {
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
             CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), theApp.m_main_wnd_data.separate_value_unit_with_space));
