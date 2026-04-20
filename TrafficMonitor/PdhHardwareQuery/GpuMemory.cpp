@@ -1,5 +1,8 @@
 ﻿#include "stdafx.h"
 #include "GpuMemory.h"
+#include <dxgi.h>
+
+#pragma comment(lib, "DXGI.lib")
 
 namespace
 {
@@ -50,6 +53,46 @@ namespace
             return SumGpuAdapterMemoryCounterValues(valueItems, false, limit);
         }
     };
+
+    bool GetGpuMemoryLimitFromDxgi(unsigned long long& limit)
+    {
+        IDXGIFactory1* p_factory{};
+        if (FAILED(::CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&p_factory))) || p_factory == nullptr)
+            return false;
+
+        unsigned long long total_memory{};
+        bool found{};
+        for (UINT i{}; ; ++i)
+        {
+            IDXGIAdapter1* p_adapter{};
+            HRESULT hr{ p_factory->EnumAdapters1(i, &p_adapter) };
+            if (hr == DXGI_ERROR_NOT_FOUND)
+                break;
+            if (FAILED(hr) || p_adapter == nullptr)
+            {
+                if (p_adapter != nullptr)
+                    p_adapter->Release();
+                continue;
+            }
+
+            DXGI_ADAPTER_DESC1 desc{};
+            if (SUCCEEDED(p_adapter->GetDesc1(&desc))
+                && (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0
+                && desc.DedicatedVideoMemory > 0)
+            {
+                total_memory += static_cast<unsigned long long>(desc.DedicatedVideoMemory);
+                found = true;
+            }
+            p_adapter->Release();
+        }
+        p_factory->Release();
+
+        if (!found || total_memory == 0)
+            return false;
+
+        limit = total_memory;
+        return true;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -84,5 +127,9 @@ bool CPdhGPUMemoryUsage::GetGpuMemoryUsage(unsigned long long& usage)
 bool CPdhGPUMemoryUsage::GetGpuMemoryLimit(unsigned long long& limit)
 {
     static CPdhGPUMemoryLimitQuery query;
-    return query.GetGpuMemoryLimit(limit);
+    if (query.GetGpuMemoryLimit(limit) && limit > 0)
+        return true;
+
+    // 部分机器没有可用的 PDH 总量计数器，退回到显卡适配器自身的固定显存信息。
+    return GetGpuMemoryLimitFromDxgi(limit);
 }
