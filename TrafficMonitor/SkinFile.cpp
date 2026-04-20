@@ -333,6 +333,7 @@ void CSkinFile::LoadFromIni(const wstring& file_path)
     getDisplayTextFromIni(TDI_DOWN, L"down_string");
     getDisplayTextFromIni(TDI_CPU, L"cpu_string");
     getDisplayTextFromIni(TDI_MEMORY, L"memory_string");
+    getDisplayTextFromIni(TDI_GPU_MEMORY, L"gpu_memory_string");
     //获取预览区大小
     m_preview_info.width = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_width"), 238));
     m_preview_info.height = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_height"), 105));
@@ -359,10 +360,15 @@ void CSkinFile::LoadFromIni(const wstring& file_path)
     m_layout_info.layout_l.layout_items[TDI_MEMORY].y = theApp.DPI(ini.GetInt(_T("layout"), _T("memory_y_l"), 21));
     m_layout_info.layout_l.layout_items[TDI_MEMORY].width = theApp.DPI(ini.GetInt(_T("layout"), _T("memory_width_l"), 110));
     m_layout_info.layout_l.layout_items[TDI_MEMORY].align = static_cast<Alignment>(ini.GetInt(_T("layout"), _T("memory_align_l"), 0));
+    m_layout_info.layout_l.layout_items[TDI_GPU_MEMORY].x = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_x_l"), 0));
+    m_layout_info.layout_l.layout_items[TDI_GPU_MEMORY].y = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_y_l"), 0));
+    m_layout_info.layout_l.layout_items[TDI_GPU_MEMORY].width = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_width_l"), 0));
+    m_layout_info.layout_l.layout_items[TDI_GPU_MEMORY].align = static_cast<Alignment>(ini.GetInt(_T("layout"), _T("gpu_memory_align_l"), 0));
     m_layout_info.layout_l.layout_items[TDI_UP].show = ini.GetBool(_T("layout"), _T("show_up_l"), true);
     m_layout_info.layout_l.layout_items[TDI_DOWN].show = ini.GetBool(_T("layout"), _T("show_down_l"), true);
     m_layout_info.layout_l.layout_items[TDI_CPU].show = ini.GetBool(_T("layout"), _T("show_cpu_l"), true);
     m_layout_info.layout_l.layout_items[TDI_MEMORY].show = ini.GetBool(_T("layout"), _T("show_memory_l"), true);
+    m_layout_info.layout_l.layout_items[TDI_GPU_MEMORY].show = ini.GetBool(_T("layout"), _T("show_gpu_memory_l"), false);
     m_preview_info.l_pos.x = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_x_l"), 0));
     m_preview_info.l_pos.y = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_y_l"), 47));
 
@@ -384,10 +390,15 @@ void CSkinFile::LoadFromIni(const wstring& file_path)
     m_layout_info.layout_s.layout_items[TDI_MEMORY].y = theApp.DPI(ini.GetInt(_T("layout"), _T("memory_y_s"), 0));
     m_layout_info.layout_s.layout_items[TDI_MEMORY].width = theApp.DPI(ini.GetInt(_T("layout"), _T("memory_width_s"), 0));
     m_layout_info.layout_s.layout_items[TDI_MEMORY].align = static_cast<Alignment>(ini.GetInt(_T("layout"), _T("memory_align_s"), 0));
+    m_layout_info.layout_s.layout_items[TDI_GPU_MEMORY].x = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_x_s"), 0));
+    m_layout_info.layout_s.layout_items[TDI_GPU_MEMORY].y = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_y_s"), 0));
+    m_layout_info.layout_s.layout_items[TDI_GPU_MEMORY].width = theApp.DPI(ini.GetInt(_T("layout"), _T("gpu_memory_width_s"), 0));
+    m_layout_info.layout_s.layout_items[TDI_GPU_MEMORY].align = static_cast<Alignment>(ini.GetInt(_T("layout"), _T("gpu_memory_align_s"), 0));
     m_layout_info.layout_s.layout_items[TDI_UP].show = ini.GetBool(_T("layout"), _T("show_up_s"), true);
     m_layout_info.layout_s.layout_items[TDI_DOWN].show = ini.GetBool(_T("layout"), _T("show_down_s"), true);
     m_layout_info.layout_s.layout_items[TDI_CPU].show = ini.GetBool(_T("layout"), _T("show_cpu_s"), false);
     m_layout_info.layout_s.layout_items[TDI_MEMORY].show = ini.GetBool(_T("layout"), _T("show_memory_s"), false);
+    m_layout_info.layout_s.layout_items[TDI_GPU_MEMORY].show = ini.GetBool(_T("layout"), _T("show_gpu_memory_s"), false);
     m_preview_info.s_pos.x = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_x_s"), 0));
     m_preview_info.s_pos.y = theApp.DPI(ini.GetInt(_T("layout"), _T("preview_y_s"), 0));
 }
@@ -729,6 +740,9 @@ string CSkinFile::GetDisplayItemXmlNodeName(DisplayItem display_item)
         break;
     case TDI_GPU_USAGE:
         return "gpu";
+        break;
+    case TDI_GPU_MEMORY:
+        return "gpu_memory";
         break;
     case TDI_CPU_TEMP:
         return "cpu_temperature";

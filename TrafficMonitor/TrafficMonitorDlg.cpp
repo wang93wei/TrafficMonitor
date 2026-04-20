@@ -182,6 +182,12 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
         tip_info += temp;
     }
+    if (!skin_layout.GetItem(TDI_GPU_MEMORY).show && theApp.m_gpu_memory >= 0)
+    {
+        temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
+            CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), theApp.m_main_wnd_data.separate_value_unit_with_space));
+        tip_info += temp;
+    }
 #ifndef WITHOUT_TEMPERATURE
     if (IsTemperatureNeeded())
     {
@@ -662,6 +668,10 @@ void CTrafficMonitorDlg::UpdateNotifyIconTip()
     {
         if (theApp.m_general_data.IsHardwareEnable(HI_GPU) && theApp.m_gpu_usage >= 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%> %"), { CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage });
+        if (theApp.m_gpu_memory >= 0)
+            strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%>"), {
+                CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
+                CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_gpu_memory), theApp.m_main_wnd_data.separate_value_unit_with_space) });
         if (theApp.m_general_data.IsHardwareEnable(HI_CPU) && theApp.m_cpu_temperature > 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%> °C"), { CCommon::LoadText(IDS_CPU_TEMPERATURE), static_cast<int>(theApp.m_cpu_temperature) });
         if (theApp.m_general_data.IsHardwareEnable(HI_GPU) && theApp.m_gpu_temperature > 0)
@@ -1373,6 +1383,13 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         else
             theApp.m_gpu_usage = -1;
     }
+
+    //获取显存占用（专用显存）
+    unsigned long long gpu_memory_usage{};
+    if (m_gpu_memory_helper.GetGpuMemoryUsage(gpu_memory_usage))
+        theApp.m_gpu_memory = static_cast<long long>(gpu_memory_usage);
+    else
+        theApp.m_gpu_memory = -1;
 
     //获取硬盘利用率
     if (lite_version /*|| is_arm64ec*/ || !theApp.m_general_data.IsHardwareEnable(HI_HDD))

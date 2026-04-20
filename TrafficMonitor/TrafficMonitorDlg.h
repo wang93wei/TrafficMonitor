@@ -22,6 +22,7 @@
 #include "AboutDlg.h"
 #include "PdhHardwareQuery/CPUUsage.h"
 #include "PdhHardwareQuery/CpuFreq.h"
+#include "PdhHardwareQuery/GpuMemory.h"
 #include "PdhHardwareQuery/GpuUsage.h"
 #include "PdhHardwareQuery/DiskUsage.h"
 #include "HistoryTrafficFile.h"
@@ -68,6 +69,7 @@ protected:
 
     CCPUUsage m_cpu_usage_helper;
     CPdhCpuFreq m_cpu_freq_helper;
+    CPdhGPUMemoryUsage m_gpu_memory_helper;
     CPdhGPUUsage m_gpu_usage_helper;
     CPdhDiskUsage m_disk_usage_helper;
 
