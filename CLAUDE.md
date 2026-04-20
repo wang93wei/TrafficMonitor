@@ -22,11 +22,16 @@ TrafficMonitor is a Windows desktop network speed monitoring utility built with 
 
 ### Build Commands (MSBuild)
 
-```bash
-# Standard x64 release (from TrafficMonitor.sln)
-msbuild TrafficMonitor.sln -p:configuration=release -p:platform=x64 -p:platformToolset=v143
+**MSBuild location**: `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe`
 
-# Lite x64 release (from TrafficMonitor_Lite.sln)
+In bash/Git Bash, use the quoted full path. In cmd/Developer Command Prompt, `msbuild` is on PATH.
+
+```bash
+# In bash/Git Bash — use full path with quotes
+"/c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/MSBuild/Current/Bin/MSBuild.exe" TrafficMonitor_Lite.sln -p:configuration="release (lite)" -p:platform=x64 -p:platformToolset=v143
+
+# In Developer Command Prompt / cmd — msbuild is on PATH
+msbuild TrafficMonitor.sln -p:configuration=release -p:platform=x64 -p:platformToolset=v143
 msbuild TrafficMonitor_Lite.sln -p:configuration="release (lite)" -p:platform=x64 -p:platformToolset=v143
 
 # ARM64EC lite release
@@ -34,6 +39,13 @@ msbuild TrafficMonitor_Lite.sln -p:configuration="release (lite)" -p:platform=AR
 ```
 
 Supported platforms: x86, x64, ARM64EC. Build output goes to `Bin/{platform}/{configuration}/`.
+
+### Build Notes
+
+- **PreBuildEvent issue**: `TrafficMonitor.vcxproj` has a PreBuildEvent that runs `print_compile_time.bat`. When building from bash (not cmd), the batch file may not be found, causing `MSB3073` error. Workarounds:
+  1. Run the batch manually first: `cmd.exe //c "cd TrafficMonitor && .\print_compile_time.bat"`
+  2. Skip the PreBuildEvent: add `-p:PreBuildEventUseInBuild=false` to the msbuild command
+- `print_compile_time.bat` writes the current date/time to `TrafficMonitor/compile_time.txt`.
 
 ### CI
 
@@ -91,7 +103,7 @@ Standard builds use both backends. Lite builds (`WITHOUT_TEMPERATURE`) exclude L
 
 ### Display Items
 
-Built-in display items defined in `DisplayItem.h` enum `DisplayItem`: `TDI_UP`, `TDI_DOWN`, `TDI_CPU`, `TDI_MEMORY`, `TDI_GPU_USAGE`, temperature items (gated by `WITHOUT_TEMPERATURE`), `TDI_HDD_USAGE`, `TDI_CPU_FREQ`, `TDI_TOTAL_SPEED`, `TDI_TODAY_TRAFFIC`.
+Built-in display items defined in `DisplayItem.h` enum `DisplayItem`: `TDI_UP`, `TDI_DOWN`, `TDI_CPU`, `TDI_MEMORY`, `TDI_GPU_USAGE`, temperature items (gated by `WITHOUT_TEMPERATURE`), `TDI_HDD_USAGE`, `TDI_CPU_FREQ`, `TDI_TOTAL_SPEED`, `TDI_TODAY_TRAFFIC`, `TDI_GPU_MEMORY` (VRAM usage via PDH).
 
 ### Localization
 
@@ -113,5 +125,6 @@ Built-in display items defined in `DisplayItem.h` enum `DisplayItem`: `TDI_UP`, 
   - `WM_MONITOR_INFO_UPDATED` (WM_USER+1007) — monitor info updated
   - `WM_REOPEN_TASKBAR_WND` (WM_USER+1008) — reopen taskbar window
   - `WM_SETTINGS_APPLIED` (WM_USER+1009) — settings applied from options dialog
+  - `WM_NEXT_USER_MSG` (WM_USER+1011) — next available custom message slot
 - MFC dialog-based architecture with multiple modeless dialogs (main window, taskbar window, options)
-- Timer-driven polling: `MAIN_TIMER`, `TASKBAR_TIMER`, `MONITOR_TIMER` for periodic data updates
+- Timer-driven polling: `MAIN_TIMER` (1234), `DELAY_TIMER` (1235), `TASKBAR_TIMER` (1236), `CONNECTION_DETAIL_TIMER` (1237), `MONITOR_TIMER` (1238), `DELETE_NOTIFY_ICON_TIMER` (1239), `RESTART_TASKBAR_TIMER` (1240), `INIT_CONNECT_TIMER` (1241), `DPI_CHANGE_TIMER` (1242)
