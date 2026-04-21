@@ -182,7 +182,7 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
         tip_info += temp;
     }
-    if (theApp.m_gpu_memory >= 0)
+    if (theApp.m_gpu_memory_total > 0)
     {
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
             CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(true));
@@ -668,7 +668,7 @@ void CTrafficMonitorDlg::UpdateNotifyIconTip()
     {
         if (theApp.m_general_data.IsHardwareEnable(HI_GPU) && theApp.m_gpu_usage >= 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%> %"), { CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage });
-        if (theApp.m_gpu_memory >= 0)
+        if (theApp.m_gpu_memory_total > 0)
             strTip += CCommon::StringFormat(_T("\r\n<%1%>: <%2%>"), {
                 CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
                 CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(true) });

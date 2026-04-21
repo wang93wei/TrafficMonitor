@@ -271,6 +271,10 @@ void CTaskBarDlg::ShowInfo(CDC* pDC)
 
 void CTaskBarDlg::DrawDisplayItem(IDrawCommon& drawer, DisplayItem type, CRect rect, int label_width, bool vertical)
 {
+    CString str_value = CommonDisplayItem(type).GetItemValueText(false);
+    if (str_value.IsEmpty())
+        return;
+
     m_item_rects[type] = rect;
     //设置要绘制的文本颜色
     COLORREF label_color{};
@@ -374,7 +378,6 @@ void CTaskBarDlg::DrawDisplayItem(IDrawCommon& drawer, DisplayItem type, CRect r
     IDrawCommon::Alignment value_alignment{ theApp.m_taskbar_data.value_right_align ? IDrawCommon::Alignment::RIGHT : IDrawCommon::Alignment::LEFT };      //数值的对齐方式
     if (vertical)
         value_alignment = IDrawCommon::Alignment::CENTER;
-    CString str_value = CommonDisplayItem(type).GetItemValueText(false);
     drawer.DrawWindowText(rect_value, str_value, text_color, value_alignment);
 }
 
@@ -753,7 +756,7 @@ CString CTaskBarDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
         tip_info += temp;
     }
-    if (theApp.m_gpu_memory >= 0)
+    if (theApp.m_gpu_memory_total > 0)
     {
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_GPU_MEMORY_USAGE),
             CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(false));

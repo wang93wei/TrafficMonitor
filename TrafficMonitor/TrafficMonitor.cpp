@@ -1233,6 +1233,8 @@ bool CTrafficMonitorApp::IsTaksbarItemDisplayed(CommonDisplayItem item) const
     }
     else
     {
+        if (item.ItemType() == TDI_GPU_MEMORY && CommonDisplayItem(TDI_GPU_MEMORY).GetItemValueText(false).IsEmpty())
+            return false;
         return m_taskbar_data.display_item.Contains(item.ItemType());
     }
     return false;

@@ -629,9 +629,9 @@ void CSkinFile::DrawItemsInfo(IDrawCommon& drawer, Layout& layout, CFont& font) 
     std::map<DisplayItem, DrawStr> map_str;
     for (const auto& display_item : AllDisplayItems)
     {
-        if (!m_layout_info.no_label)
-            map_str[display_item].label = theApp.m_main_wnd_data.disp_str.GetConst(display_item).c_str();
         map_str[display_item].value = CommonDisplayItem(display_item).GetItemValueText(true);
+        if (!map_str[display_item].value.IsEmpty() && !m_layout_info.no_label)
+            map_str[display_item].label = theApp.m_main_wnd_data.disp_str.GetConst(display_item).c_str();
     }
 
     //获取文本颜色

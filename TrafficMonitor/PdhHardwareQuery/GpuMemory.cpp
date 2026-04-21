@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "GpuMemory.h"
+#include "GpuMemorySelection.h"
 #include <dxgi.h>
 
 #pragma comment(lib, "DXGI.lib")
@@ -21,30 +22,6 @@ namespace
         luid.HighPart = static_cast<LONG>(high_part);
         luid.LowPart = static_cast<DWORD>(low_part);
         return true;
-    }
-
-    bool CollectGpuAdapterLuids(const std::vector<CPdhQuery::CounterValueItem>& valueItems, std::vector<LUID>& adapter_luids)
-    {
-        adapter_luids.clear();
-        for (const auto& item : valueItems)
-        {
-            LUID luid{};
-            if (!ParseGpuAdapterLuid(item.name, luid))
-                continue;
-
-            bool already_exists{};
-            for (const auto& current_luid : adapter_luids)
-            {
-                if (IsSameGpuAdapterLuid(current_luid, luid))
-                {
-                    already_exists = true;
-                    break;
-                }
-            }
-            if (!already_exists)
-                adapter_luids.push_back(luid);
-        }
-        return !adapter_luids.empty();
     }
 
     bool SumGpuAdapterMemoryCounterValues(const std::vector<CPdhQuery::CounterValueItem>& valueItems,
@@ -71,8 +48,8 @@ namespace
         return true;
     }
 
-    bool SumGpuAdapterMemoryCounterValues(const std::vector<CPdhQuery::CounterValueItem>& valueItems,
-        const std::vector<LUID>& adapter_luids, unsigned long long& sum)
+    bool GetGpuMemoryCounterValueByLuid(const std::vector<CPdhQuery::CounterValueItem>& valueItems,
+        const LUID& target_luid, unsigned long long& sum)
     {
         double total_value{};
         bool found{};
@@ -85,14 +62,10 @@ namespace
             if (!ParseGpuAdapterLuid(item.name, luid))
                 continue;
 
-            for (const auto& current_luid : adapter_luids)
+            if (IsSameGpuAdapterLuid(target_luid, luid))
             {
-                if (IsSameGpuAdapterLuid(current_luid, luid))
-                {
-                    total_value += item.value;
-                    found = true;
-                    break;
-                }
+                total_value += item.value;
+                found = true;
             }
         }
         if (!found)
@@ -100,6 +73,15 @@ namespace
 
         sum = static_cast<unsigned long long>(total_value + 0.5);
         return true;
+    }
+
+    GpuMemorySelection::AdapterKind GetGpuAdapterKind(const DXGI_ADAPTER_DESC1& desc)
+    {
+        if (desc.DedicatedVideoMemory > 0)
+            return GpuMemorySelection::AdapterKind::Discrete;
+        if (desc.SharedSystemMemory > 0 || desc.DedicatedSystemMemory > 0)
+            return GpuMemorySelection::AdapterKind::Integrated;
+        return GpuMemorySelection::AdapterKind::Unknown;
     }
 
     class CPdhGPUMemoryLimitQuery : public CPdhQuery
@@ -119,18 +101,13 @@ namespace
         }
     };
 
-    bool GetGpuMemoryLimitFromDxgi(const std::vector<CPdhQuery::CounterValueItem>& valueItems, unsigned long long& limit)
+    bool GetGpuMemoryLimitFromDxgi(const std::vector<CPdhQuery::CounterValueItem>& limitValueItems, unsigned long long& limit)
     {
-        std::vector<LUID> adapter_luids;
-        if (!CollectGpuAdapterLuids(valueItems, adapter_luids))
-            return false;
-
         IDXGIFactory1* p_factory{};
         if (FAILED(::CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&p_factory))) || p_factory == nullptr)
             return false;
 
-        unsigned long long total_memory{};
-        bool found{};
+        std::vector<GpuMemorySelection::AdapterCandidate> candidates;
         for (UINT i{}; ; ++i)
         {
             IDXGIAdapter1* p_adapter{};
@@ -145,30 +122,24 @@ namespace
             }
 
             DXGI_ADAPTER_DESC1 desc{};
-            if (SUCCEEDED(p_adapter->GetDesc1(&desc))
-                && (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0
-                && desc.DedicatedVideoMemory > 0)
+            if (SUCCEEDED(p_adapter->GetDesc1(&desc)))
             {
-                for (const auto& luid : adapter_luids)
-                {
-                    if (IsSameGpuAdapterLuid(desc.AdapterLuid, luid))
-                    {
-                        total_memory += static_cast<unsigned long long>(desc.DedicatedVideoMemory);
-                        found = true;
-                        break;
-                    }
-                }
+                GpuMemorySelection::AdapterCandidate candidate;
+                candidate.kind = GetGpuAdapterKind(desc);
+                candidate.dedicated_video_memory = static_cast<unsigned long long>(desc.DedicatedVideoMemory);
+                candidate.dedicated_system_memory = static_cast<unsigned long long>(desc.DedicatedSystemMemory);
+                candidate.shared_system_memory = static_cast<unsigned long long>(desc.SharedSystemMemory);
+                candidate.is_software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
+                GetGpuMemoryCounterValueByLuid(limitValueItems, desc.AdapterLuid, candidate.pdh_dedicated_limit);
+                candidates.push_back(candidate);
             }
             p_adapter->Release();
         }
         p_factory->Release();
 
-        if (!found || total_memory == 0)
-            return false;
-
-        limit = total_memory;
-        return true;
+        return GpuMemorySelection::SelectPreferredAdapterMemoryLimit(candidates, limit);
     }
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -202,31 +173,14 @@ bool CPdhGPUMemoryUsage::GetGpuMemoryUsage(unsigned long long& usage)
 
 bool CPdhGPUMemoryUsage::GetGpuMemoryLimit(unsigned long long& limit)
 {
-    std::vector<CounterValueItem> valueItems;
-    if (!QueryValues(valueItems) || valueItems.empty())
-        return false;
-
-    std::vector<LUID> adapter_luids;
-    CollectGpuAdapterLuids(valueItems, adapter_luids);
-
     static CPdhGPUMemoryLimitQuery query;
     std::vector<CounterValueItem> limitValueItems;
     if (query.QueryGpuMemoryLimitValues(limitValueItems))
     {
-        if (!adapter_luids.empty())
-        {
-            if (SumGpuAdapterMemoryCounterValues(limitValueItems, adapter_luids, limit) && limit > 0)
-                return true;
-        }
-        else
-        {
-            if (SumGpuAdapterMemoryCounterValues(limitValueItems, true, limit) && limit > 0)
-                return true;
-            if (SumGpuAdapterMemoryCounterValues(limitValueItems, false, limit) && limit > 0)
-                return true;
-        }
+        if (GetGpuMemoryLimitFromDxgi(limitValueItems, limit) && limit > 0)
+            return true;
     }
 
-    // 部分机器没有可用的 PDH 总量计数器，退回到与当前专用显存实例匹配的适配器固定显存信息。
-    return GetGpuMemoryLimitFromDxgi(valueItems, limit);
+    // 部分机器没有可用的 PDH 总量计数器，退回到显卡适配器自身的固定显存信息。
+    return GetGpuMemoryLimitFromDxgi({}, limit);
 }

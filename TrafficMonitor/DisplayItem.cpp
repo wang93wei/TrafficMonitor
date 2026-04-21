@@ -7,15 +7,14 @@ namespace
 {
     CString GpuMemoryToString(long long used_bytes, long long total_bytes, bool with_space)
     {
+        if (total_bytes <= 0)
+            return CString();
         if (used_bytes < 0)
             return _T("--");
 
         constexpr double one_gb = 1024.0 * 1024.0 * 1024.0;
         CString str_value;
-        if (total_bytes > 0)
-            str_value.Format(_T("%.2f/%.2f"), used_bytes / one_gb, total_bytes / one_gb);
-        else
-            str_value.Format(_T("%.2f"), used_bytes / one_gb);
+        str_value.Format(_T("%.2f/%.2f"), used_bytes / one_gb, total_bytes / one_gb);
 
         if (with_space)
             str_value += _T(' ');
