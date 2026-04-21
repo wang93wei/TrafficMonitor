@@ -11,7 +11,6 @@ public:
 protected:
     bool Initialize();
     bool QueryValue(double& value);
-    bool QueryValues(std::vector<CounterValueItem>& values);
 
 public:
     struct CounterValueItem
@@ -19,6 +18,9 @@ public:
         std::wstring name;
         double value{};
     };
+
+protected:
+    bool QueryValues(std::vector<CounterValueItem>& values);
 
 protected:
     HQUERY query = nullptr;
