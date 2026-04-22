@@ -21,6 +21,16 @@ namespace
         str_value += _T("GB");
         return str_value;
     }
+
+    CString GpuMemorySampleToString(long long total_bytes, bool with_space)
+    {
+        if (total_bytes > 0)
+            return GpuMemoryToString(total_bytes, total_bytes, with_space);
+
+        if (with_space)
+            return _T("9.99/9.99 GB");
+        return _T("9.99/9.99GB");
+    }
 }
 
 CommonDisplayItem::CommonDisplayItem(DisplayItem item)
@@ -439,10 +449,7 @@ CString CommonDisplayItem::GetItemValueSampleText(bool is_main_window) const
             break;
         case TDI_GPU_MEMORY:
         {
-            if (theApp.m_taskbar_data.separate_value_unit_with_space)
-                sample_str = _T("999.99/999.99 GB");
-            else
-                sample_str = _T("999.99/999.99GB");
+            sample_str = GpuMemorySampleToString(theApp.m_gpu_memory_total, theApp.m_taskbar_data.separate_value_unit_with_space);
         }
             break;
         }
