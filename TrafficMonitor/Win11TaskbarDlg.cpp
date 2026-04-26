@@ -4,15 +4,19 @@
 
 void CWin11TaskbarDlg::AdjustTaskbarWndPos(bool force_adjust)
 {
-    ::GetWindowRect(m_hNotify, m_rcNotify);
-    ::GetWindowRect(m_hStart, m_rcStart);
-    m_rcStart.MoveToXY(m_rcStart.left - m_rcTaskbar.left, m_rcStart.top - m_rcTaskbar.top);
+    m_rcNotify.SetRectEmpty();
+    if (::GetWindowRect(m_hNotify, m_rcNotify) && !m_rcNotify.IsRectEmpty())
+        m_rcNotify.MoveToXY(m_rcNotify.left - m_rcTaskbar.left, m_rcNotify.top - m_rcTaskbar.top);
+    m_rcStart.SetRectEmpty();
+    if (::GetWindowRect(m_hStart, m_rcStart) && !m_rcStart.IsRectEmpty())
+        m_rcStart.MoveToXY(m_rcStart.left - m_rcTaskbar.left, m_rcStart.top - m_rcTaskbar.top);
 
     //设置窗口大小
     m_rect.right = m_rect.left + m_window_width;
     m_rect.bottom = m_rect.top + m_window_height;
-    if (force_adjust || m_rcNotify.Width() != m_last_notify_width || m_rcStart.left != m_last_start_pos)   //如果最小化窗口的宽度改变了，重新设置任务栏窗口的位置
+    if (force_adjust || m_rcNotify.left != m_last_notify_left || m_rcNotify.Width() != m_last_notify_width || m_rcStart.left != m_last_start_pos)   //如果任务栏关键锚点改变了，重新设置任务栏窗口的位置
     {
+        m_last_notify_left = m_rcNotify.left;
         m_last_notify_width = m_rcNotify.Width();
         m_last_start_pos = m_rcStart.left;
         //任务窗口显示在右侧时，或者Windows11下任务栏左对齐时
@@ -30,14 +34,11 @@ void CWin11TaskbarDlg::AdjustTaskbarWndPos(bool force_adjust)
             //通知区窗口的水平位置
             int notify_x_pos = m_rcNotify.left;
             //没有获取到通知区位置的情况
-            if (notify_x_pos == 0)
+            if (m_rcNotify.IsRectEmpty())
             {
-                //Win11副屏没有通知区窗口，这里使用固定的值（88像素的系统时间区域）
-                if (m_is_secondary_display)
-                    notify_x_pos = m_rcTaskbar.Width() - DPI(88);
-                //如果不是副屏，但是仍然没有获取到通知区域的位置，使用配置文件中taskbar_right_space_win11指定的值
-                else
-                    notify_x_pos = m_rcTaskbar.Width() - DPI(theApp.m_taskbar_data.taskbar_right_space_win11);
+                //Win11下拿不到通知区窗口时，统一使用可配置的右侧保留宽度，
+                //避免副屏时间/日期区域变宽后把任务栏窗口顶进系统区域。
+                notify_x_pos = m_rcTaskbar.Width() - DPI(theApp.m_taskbar_data.taskbar_right_space_win11);
             }
             //如果显示了小组件，并且任务栏靠左显示，则留出小组件的位置
             if (theApp.m_taskbar_data.avoid_overlap_with_widgets && CWindowsSettingHelper::IsTaskbarWidgetsBtnShown() && !CWindowsSettingHelper::IsTaskbarCenterAlign())
@@ -90,6 +91,7 @@ void CWin11TaskbarDlg::InitTaskbarWnd()
 {
     m_hNotify = ::FindWindowEx(m_hTaskbar, 0, L"TrayNotifyWnd", NULL);
     m_hStart = ::FindWindowEx(m_hTaskbar, nullptr, L"Start", NULL);
+    m_rcNotify.SetRectEmpty();
     ::GetWindowRect(m_hNotify, m_rcNotify);
 }
 
