@@ -2,6 +2,11 @@
 #include "Win11TaskbarDlg.h"
 #include "WindowsSettingHelper.h"
 
+namespace
+{
+    constexpr int SECONDARY_TASKBAR_RIGHT_SPACE_WIN11 = 88;
+}
+
 void CWin11TaskbarDlg::AdjustTaskbarWndPos(bool force_adjust)
 {
     m_rcNotify.SetRectEmpty();
@@ -36,9 +41,11 @@ void CWin11TaskbarDlg::AdjustTaskbarWndPos(bool force_adjust)
             //没有获取到通知区位置的情况
             if (m_rcNotify.IsRectEmpty())
             {
-                //Win11下拿不到通知区窗口时，统一使用可配置的右侧保留宽度，
-                //避免副屏时间/日期区域变宽后把任务栏窗口顶进系统区域。
-                notify_x_pos = m_rcTaskbar.Width() - DPI(theApp.m_taskbar_data.taskbar_right_space_win11);
+                //副屏没有通知区和任务栏图标时，只需要避开系统时间区域。
+                const int right_space = m_is_secondary_display
+                    ? SECONDARY_TASKBAR_RIGHT_SPACE_WIN11
+                    : theApp.m_taskbar_data.taskbar_right_space_win11;
+                notify_x_pos = m_rcTaskbar.Width() - DPI(right_space);
             }
             //如果显示了小组件，并且任务栏靠左显示，则留出小组件的位置
             if (theApp.m_taskbar_data.avoid_overlap_with_widgets && CWindowsSettingHelper::IsTaskbarWidgetsBtnShown() && !CWindowsSettingHelper::IsTaskbarCenterAlign())
@@ -51,7 +58,9 @@ void CWin11TaskbarDlg::AdjustTaskbarWndPos(bool force_adjust)
         else
         {
             //靠近“开始”按钮
-            if (theApp.m_taskbar_data.tbar_wnd_snap)
+            if (theApp.m_taskbar_data.tbar_wnd_snap
+                && !m_is_secondary_display
+                && !m_rcStart.IsRectEmpty())
             {
                 m_rect.MoveToX(m_rcStart.left - m_rect.Width() - 2);
             }
