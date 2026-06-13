@@ -7,7 +7,9 @@ on:
 jobs:
 
   x64_build:
-    runs-on: windows-latest
+    # 固定 windows-2022：windows-latest 已于 2026-06 迁移到 VS2026 镜像，
+    # 该镜像缺 MFC 库（MSB8041）且无 v143 工具集（MSB8020），无法构建本项目。
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v3
@@ -40,7 +42,8 @@ jobs:
         path: Bin/x64/Release (lite)/*.pdb
 
   x86_build:
-    runs-on: windows-latest
+    # 同上，固定 windows-2022 以获得 MFC 库与 v143 工具集
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v3
@@ -73,7 +76,8 @@ jobs:
         path: Bin/Release (lite)/*.pdb
 
   arm64ec_build:
-    runs-on: windows-latest
+    # 同上，固定 windows-2022
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v3
