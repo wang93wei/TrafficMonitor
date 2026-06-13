@@ -10,6 +10,11 @@ public:
     CSkinFile();
     ~CSkinFile();
 
+    // CSkinFile 持有 GDI+ Image*、CImage、CFont 等裸资源（析构中 SAFE_DELETE/DeleteObject），
+    // 默认拷贝会导致浅拷贝后双重释放。显式禁用拷贝构造与拷贝赋值以杜绝该风险。
+    CSkinFile(const CSkinFile&) = delete;
+    CSkinFile& operator=(const CSkinFile&) = delete;
+
 
     //
     /**

@@ -30,6 +30,9 @@ void CPdhDiskUsage::ExtractDiskNames()
 
     for (const auto& item : values)
     {
+        // 跳过 _Total 聚合实例，它不是具体物理磁盘，按 index 取值时会误命中导致返回全盘空闲反转为利用率。
+        if (item.name == L"_Total")
+            continue;
         CString name(item.name.c_str());
         m_diskNames.push_back(name);
     }
@@ -56,14 +59,23 @@ bool CPdhDiskUsage::GetDiskUsage(int diskIndex, int& usage)
     if (!m_isAvailable)
         return false;
 
+    // diskIndex 对应 m_diskNames 中的磁盘名（已排除 _Total）。
+    if (diskIndex < 0 || diskIndex >= static_cast<int>(m_diskNames.size()))
+        return false;
+    std::wstring target_name = m_diskNames[diskIndex].GetString();
+
     std::vector<CounterValueItem> values;
     if (!QueryValues(values) || values.empty())
         return false;
 
-    if (diskIndex >= 0 && diskIndex < static_cast<int>(values.size()))
+    // 按名字匹配当前实例（PDH 实例顺序在热插拔/盘符变动时可能变化，不能假定与构造期一致）。
+    for (const auto& item : values)
     {
-        usage = CalculateUtilization(values[diskIndex].value);
-        return true;
+        if (item.name == target_name)
+        {
+            usage = CalculateUtilization(item.value);
+            return true;
+        }
     }
     return false;
 

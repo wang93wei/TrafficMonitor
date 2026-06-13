@@ -20,8 +20,9 @@ void CPictureStatic::SetPicture(UINT pic_id)
 		return;
 	//获取图像实际大小
 	GetObject(m_bitmap, sizeof(BITMAP), &m_bm);
-	CDC* pDC = GetDC();
-	m_memDC.CreateCompatibleDC(pDC);
+	// 用 CClientDC 自动管理 DC 生命周期，避免 GetDC 后忘记 ReleaseDC 导致 GDI 句柄泄漏。
+	CClientDC dc(this);
+	m_memDC.CreateCompatibleDC(&dc);
 	m_memDC.SelectObject(&m_bitmap);
 	//获取控件大小
 	GetClientRect(m_rect);
@@ -37,8 +38,9 @@ void CPictureStatic::SetPicture(HBITMAP hBitmap)
 		return;
 	//获取图像实际大小
 	GetObject(m_bitmap, sizeof(BITMAP), &m_bm);
-	CDC* pDC = GetDC();
-	m_memDC.CreateCompatibleDC(pDC);
+	// 同上，用 CClientDC 避免 DC 泄漏。
+	CClientDC dc(this);
+	m_memDC.CreateCompatibleDC(&dc);
 	m_memDC.SelectObject(&m_bitmap);
 	//获取控件大小
 	GetClientRect(m_rect);

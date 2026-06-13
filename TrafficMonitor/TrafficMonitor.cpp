@@ -6,6 +6,7 @@
 #include "TrafficMonitor.h"
 #include "TrafficMonitorDlg.h"
 #include "crashtool.h"
+#include <cwctype>      // towlower（更新链接白名单 host 转小写用）
 #include "UpdateHelper.h"
 #include "Test.h"
 #include "WIC.h"
@@ -589,7 +590,35 @@ void CTrafficMonitorApp::CheckUpdate(bool message)
 
         if (AfxMessageBox(info, MB_YESNO | MB_ICONQUESTION) == IDYES)
         {
-            ShellExecute(NULL, _T("open"), link.c_str(), NULL, NULL, SW_SHOW);      //转到下载链接
+            // 安全校验：link 来自远程 version_utf8.info，若更新源被攻破/MITM，
+            // link 可能被填成 file:、javascript: 或可执行协议导致任意命令执行。
+            // 这里强制要求 https:// 且 host 为可信域名（github.com / gitee.com）。
+            bool link_safe = false;
+            if (link.size() > 8 && (link.compare(0, 8, L"https://") == 0))
+            {
+                std::wstring host = link.substr(8);
+                size_t slash = host.find(L'/');
+                if (slash != std::wstring::npos)
+                    host = host.substr(0, slash);
+                // 转小写比较
+                std::wstring host_lower;
+                host_lower.reserve(host.size());
+                for (wchar_t c : host)
+                    host_lower.push_back(static_cast<wchar_t>(towlower(c)));
+                if (host_lower == L"github.com" || host_lower == L"gitee.com"
+                    || host_lower == L"www.github.com" || host_lower == L"www.gitee.com")
+                {
+                    link_safe = true;
+                }
+            }
+            if (link_safe)
+            {
+                ShellExecute(NULL, _T("open"), link.c_str(), NULL, NULL, SW_SHOW);      //转到下载链接
+            }
+            else
+            {
+                AfxMessageBox(CCommon::LoadText(IDS_CHECK_UPDATE_ERROR), MB_OK | MB_ICONWARNING);
+            }
         }
     }
     else
@@ -677,7 +706,7 @@ bool CTrafficMonitorApp::GetAutoRun(wstring* auto_run_path, bool task_scheduler)
                 //去掉前后的引号
                 if (auto_run_path->front() == L'\"')
                     *auto_run_path = auto_run_path->substr(1);
-                if (auto_run_path->back() = L'\"')
+                if (!auto_run_path->empty() && auto_run_path->back() == L'\"')
                     auto_run_path->pop_back();
             }
             return (m_module_path_reg == buff); //如果“TrafficMonitor”的值是当前程序的路径，就返回true，否则返回false
@@ -1495,5 +1524,9 @@ int CTrafficMonitorApp::GetDPI(DPIType type) const
 
 const wchar_t* CTrafficMonitorApp::GetStringRes(const wchar_t* key, const wchar_t* section)
 {
-    return m_str_table.LoadText(key, section).c_str();
+    // 使用 static 缓冲，避免返回临时 std::wstring 的悬空 c_str()（use-after-free）。
+    // 与 GetMonitorValueString / GetPluginConfigDir 保持一致。
+    static std::wstring str;
+    str = m_str_table.LoadText(key, section);
+    return str.c_str();
 }

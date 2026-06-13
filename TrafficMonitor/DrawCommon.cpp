@@ -318,7 +318,8 @@ void DrawCommonHelper::GetBitmapAlphaPixel(HBITMAP hBitmap, std::set<Point>& poi
     bmpInfo.bmiHeader.biCompression = BI_RGB;
 
     HDC hdc = CreateCompatibleDC(NULL);
-    SelectObject(hdc, hBitmap);
+    // 选入位图前保存旧对象，DeleteDC 前必须选回，否则被选中的位图无法被正确释放/复用。
+    HGDIOBJ hOldBitmap = SelectObject(hdc, hBitmap);
 
     // 分配内存存储位图像素
     RGBQUAD* pPixels = new RGBQUAD[width * height];
@@ -337,6 +338,8 @@ void DrawCommonHelper::GetBitmapAlphaPixel(HBITMAP hBitmap, std::set<Point>& poi
     }
 
     delete[] pPixels;
+    // 删除 DC 前先还原旧位图，避免 GDI 选中态泄漏
+    SelectObject(hdc, hOldBitmap);
     DeleteDC(hdc);
 
 }
@@ -359,7 +362,7 @@ void DrawCommonHelper::FixBitmapTextAlpha(HBITMAP hBitmap, BYTE alpha, std::set<
     bmpInfo.bmiHeader.biCompression = BI_RGB;
 
     HDC hdc = CreateCompatibleDC(NULL);
-    SelectObject(hdc, hBitmap);
+    HGDIOBJ hOldBitmap = SelectObject(hdc, hBitmap);
 
     // 分配内存存储位图像素
     RGBQUAD* pPixels = new RGBQUAD[width * height];
@@ -381,5 +384,7 @@ void DrawCommonHelper::FixBitmapTextAlpha(HBITMAP hBitmap, BYTE alpha, std::set<
     SetDIBits(hdc, hBitmap, 0, height, pPixels, &bmpInfo, DIB_RGB_COLORS);
 
     delete[] pPixels;
+    // 删除 DC 前先还原旧位图，避免 GDI 选中态泄漏
+    SelectObject(hdc, hOldBitmap);
     DeleteDC(hdc);
 }

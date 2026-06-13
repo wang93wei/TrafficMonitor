@@ -111,6 +111,7 @@ BEGIN_MESSAGE_MAP(CTrafficMonitorDlg, CDialog)
     ON_MESSAGE(WM_DPICHANGED, &CTrafficMonitorDlg::OnDpichanged)
     ON_MESSAGE(WM_TASKBAR_WND_CLOSED, &CTrafficMonitorDlg::OnTaskbarWndClosed)
     ON_MESSAGE(WM_MONITOR_INFO_UPDATED, &CTrafficMonitorDlg::OnMonitorInfoUpdated)
+    ON_MESSAGE(WM_HARDWARE_MONITOR_ERROR, &CTrafficMonitorDlg::OnHardwareMonitorError)
     ON_MESSAGE(WM_DISPLAYCHANGE, &CTrafficMonitorDlg::OnDisplaychange)
     ON_WM_EXITSIZEMOVE()
     ON_COMMAND(ID_PLUGIN_MANAGE, &CTrafficMonitorDlg::OnPluginManage)
@@ -1251,9 +1252,19 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         time_span = static_cast<int>(net_speed_time - last_net_speed_time);
     last_net_speed_time = net_speed_time;
 
-    //将当前监控时间间隔的流量转换成每秒时间间隔内的流量
-    theApp.m_in_speed = static_cast<unsigned __int64>(cur_in_speed * 1000 / time_span);
-    theApp.m_out_speed = static_cast<unsigned __int64>(cur_out_speed * 1000 / time_span);
+    // 防御：时钟回拨（NTP 校时/用户改时间）或采样过快会导致 time_span <= 0，
+    // 直接做整数除法会触发硬件除零异常（C++ 无法 catch）。此时置零并跳过速率计算。
+    if (time_span <= 0)
+    {
+        theApp.m_in_speed = 0;
+        theApp.m_out_speed = 0;
+    }
+    else
+    {
+        //将当前监控时间间隔的流量转换成每秒时间间隔内的流量
+        theApp.m_in_speed = static_cast<unsigned __int64>(cur_in_speed * 1000 / time_span);
+        theApp.m_out_speed = static_cast<unsigned __int64>(cur_out_speed * 1000 / time_span);
+    }
 
     m_connection_change_flag = false;    //清除连接发生变化的标志
 
@@ -1486,7 +1497,11 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                 {
                     msg = error_info;
                 }
-                AfxMessageBox(msg, MB_ICONERROR | MB_OK);
+                // 不能在工作线程(本函数)直接 AfxMessageBox：MFC 模态框会阻塞工作线程，
+                // 导致 ExitMonitorThread 的等待超时后析构成员引发 use-after-free。
+                // 改为存文本到成员 + PostMessage 通知 UI 线程弹窗。
+                m_pending_hw_error_msg = msg;
+                PostMessage(WM_HARDWARE_MONITOR_ERROR, 0, 0);
                 m_hardware_monitor_error_shown = true;
             }
 
@@ -1497,7 +1512,9 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                 CString disable_msg = CCommon::LoadText(_T("Hardware monitoring has been automatically disabled due to persistent errors.\n")
                     _T("You can re-enable it in Options after resolving the issue (e.g., updating GPU driver)."));
                 CCommon::WriteLog(disable_msg, theApp.m_log_path.c_str());
-                AfxMessageBox(disable_msg, MB_ICONWARNING | MB_OK);
+                // 同上，PostMessage 到 UI 线程弹窗（wParam=1 表示自动禁用提示）
+                m_pending_hw_error_msg = disable_msg;
+                PostMessage(WM_HARDWARE_MONITOR_ERROR, 1, 0);
             }
         }
         else
@@ -1601,8 +1618,11 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
 
     m_monitor_time_cnt++;
 
-    //发送监控信息更新消息
-    SendMessage(WM_MONITOR_INFO_UPDATED);
+    // 发送监控信息更新消息。
+    // 必须用 PostMessage（异步）而非 SendMessage（同步）：本函数运行在后台采集线程，
+    // SendMessage 会阻塞等待 UI 线程处理，若 UI 正弹模态框（温度报错/任务栏嵌入失败），
+    // 后台线程会永久阻塞或与 UI 死锁。PostMessage 异步投递后立即返回，UI 在消息泵空闲时处理。
+    PostMessage(WM_MONITOR_INFO_UPDATED);
 }
 
 UINT CTrafficMonitorDlg::MonitorThreadCallback(LPVOID dwUser)
@@ -1640,8 +1660,13 @@ void CTrafficMonitorDlg::ExitMonitorThread()
     // 通知线程退出
     m_is_thread_exit = true;
 
-    // 等待线程退出
-    ::WaitForSingleObject(m_threadExitEvent.m_hObject, 1000);
+    // 等待线程退出。
+    // 原 1 秒超时过短：DoMonitorAcquisition 内的温度采集、PDH 查询、偶尔的硬件监控
+    // 错误弹窗都可能超过 1 秒，超时后主对话框继续析构会 free(m_pIfTable) 等，
+    // 而工作线程仍在访问这些成员导致 use-after-free。改为 10 秒覆盖正常场景。
+    // 注意：彻底修复需要把工作线程内的 AfxMessageBox 改为 PostMessage（消除阻塞根源），
+    // 此处先用更长超时降低 UAF 概率。
+    ::WaitForSingleObject(m_threadExitEvent.m_hObject, 10000);
 }
 
 
@@ -2908,6 +2933,17 @@ afx_msg LRESULT CTrafficMonitorDlg::OnTaskbarWndClosed(WPARAM wParam, LPARAM lPa
     return 0;
 }
 
+
+
+afx_msg LRESULT CTrafficMonitorDlg::OnHardwareMonitorError(WPARAM wParam, LPARAM lParam)
+{
+    // 由后台采集线程 PostMessage 触发（原本在工作线程内直接 AfxMessageBox 会阻塞线程）。
+    // wParam=0: 普通硬件监控错误；wParam=1: 连续错误后自动禁用提示。
+    // 在 UI 线程弹窗安全。文本已由后台线程写入 m_pending_hw_error_msg。
+    UINT flags = (wParam == 1) ? (MB_ICONWARNING | MB_OK) : (MB_ICONERROR | MB_OK);
+    AfxMessageBox(m_pending_hw_error_msg, flags);
+    return 0;
+}
 
 
 afx_msg LRESULT CTrafficMonitorDlg::OnMonitorInfoUpdated(WPARAM wParam, LPARAM lParam)

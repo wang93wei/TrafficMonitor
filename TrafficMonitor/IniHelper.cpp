@@ -267,8 +267,14 @@ bool CIniHelper::Save()
 {
     if (m_file_path.empty())
         return false;
-    ofstream file_stream{ m_file_path };
-    if(file_stream.fail())
+
+    // 原子写入：先写到临时文件，全部成功后再原子替换原文件。
+    // 直接覆盖写 config.ini 时，若进程崩溃/断电/磁盘满，会留下半截损坏文件，
+    // 导致用户全部设置丢失且不可恢复。
+    std::wstring tmp_path = m_file_path + L".tmp";
+    // 保持文本模式（与原实现一致），使 m_ini_str 中的 \n 在落盘时转换为 CRLF。
+    ofstream file_stream{ tmp_path };
+    if (file_stream.fail())
         return false;
     string ini_str{ CCommon::UnicodeToStr(m_ini_str.c_str(), m_save_as_utf8) };
     if (m_save_as_utf8)     //如果以UTF8编码保存，先插入BOM
@@ -281,7 +287,25 @@ bool CIniHelper::Save()
     }
 
     file_stream << ini_str;
-    return true;
+    file_stream.flush();
+    bool write_ok = !file_stream.bad();
+    file_stream.close();
+
+    if (!write_ok)
+    {
+        // 写入失败，删除可能残留的临时文件，保持原文件不变
+        ::DeleteFileW(tmp_path.c_str());
+        return false;
+    }
+
+    // 原子替换：MoveFileExW 带 REPLACE_EXISTING 在同卷下是原子的（NTFS rename）
+    if (::MoveFileExW(tmp_path.c_str(), m_file_path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        return true;
+    }
+    // 替换失败（如文件被占用），回退：删除临时文件，保留原文件
+    ::DeleteFileW(tmp_path.c_str());
+    return false;
 }
 
 void CIniHelper::UnEscapeString(wstring& str)

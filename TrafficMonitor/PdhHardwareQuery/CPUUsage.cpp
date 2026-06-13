@@ -21,6 +21,9 @@ bool CPdhCPUUsage::GetCPUUsage(int& cpu_usage)
         cpu_usage = static_cast<int>(value);
         if (cpu_usage > 100)
             cpu_usage = 100;
+        // PDH 首次采样或异常时可能返回负值，需钳制下界，避免显示负利用率
+        if (cpu_usage < 0)
+            cpu_usage = 0;
         return true;
     }
     return false;
@@ -69,8 +72,15 @@ int CCPUUsage::GetCpuUsageByGetSystemTimes()
     }
     else
     {
-        //（总的时间-空闲时间）/总的时间=占用cpu的时间就是使用率
-        cpu_usage = static_cast<int>(abs((kernel + user - idle) * 100 / (kernel + user)));
+        //（总的时间-空闲时间）/总的时间=占用cpu的时间就是使用率。
+        // 用浮点计算避免整数除法丢精度；休眠唤醒/时间回绕时 idle 可能 > kernel+user 导致负值，
+        // 不应再用 abs 掩盖（会得到错误的正值），而应 clamp 到 [0,100]。
+        double usage = (kernel + user - idle) * 100.0 / (kernel + user);
+        if (usage < 0)
+            usage = 0;
+        else if (usage > 100)
+            usage = 100;
+        cpu_usage = static_cast<int>(usage + 0.5);     // 四舍五入
     }
     m_preidleTime = idleTime;
     m_prekernelTime = kernelTime;

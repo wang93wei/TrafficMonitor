@@ -50,6 +50,7 @@ BEGIN_MESSAGE_MAP(CTaskBarDlg, CDialogEx)
     ON_WM_PAINT()
     ON_WM_CLOSE()
     ON_WM_LBUTTONUP()
+    ON_WM_DESTROY()
     ON_MESSAGE(WM_EXITMENULOOP, &CTaskBarDlg::OnExitmenuloop)
     ON_MESSAGE(WM_TABLET_QUERYSYSTEMGESTURESTATUS, &CTaskBarDlg::OnTabletQuerysystemgesturestatus)
     ON_WM_MOUSEWHEEL()
@@ -536,7 +537,16 @@ bool CTaskBarDlg::AdjustWindowPos(bool force_adjust)
     if (force_adjust)
         ResetTaskbarPos();
 
-    ::GetWindowRect(m_hTaskbar, m_rcTaskbar);   //获得任务栏的矩形区域
+    // 任务栏窗口句柄属于 explorer.exe，Explorer 重启后会失效。
+    // 对失效 HWND 调 GetWindowRect 会得到全 0 矩形，后续坐标计算全错。
+    // 这里先校验，失效则尝试重新查找；仍找不到则放弃本次调整。
+    if (!::IsWindow(m_hTaskbar))
+    {
+        bool is_secondary = false;
+        m_hTaskbar = FindTaskbarHandle(is_secondary);
+    }
+    if (!::IsWindow(m_hTaskbar) || !::GetWindowRect(m_hTaskbar, m_rcTaskbar))
+        return false;   //获得任务栏的矩形区域
 
     static bool last_taskbar_on_top_or_bottom;
     CheckTaskbarOnTopOrBottom();
@@ -999,7 +1009,9 @@ BOOL CTaskBarDlg::OnInitDialog()
     m_pDC = GetDC();
 
     m_hTaskbar = FindTaskbarHandle(m_is_secondary_display); //查找任务栏的句柄
-    ::GetWindowRect(m_hTaskbar, m_rcTaskbar);   //获得任务栏的矩形区域
+    // 校验句柄有效性：Explorer 重启后旧句柄失效，GetWindowRect 会得到全 0 矩形。
+    if (::IsWindow(m_hTaskbar))
+        ::GetWindowRect(m_hTaskbar, m_rcTaskbar);   //获得任务栏的矩形区域
 
     //设置窗口透明色
     ApplyWindowTransparentColor();
@@ -1438,9 +1450,24 @@ void CTaskBarDlg::TryDrawGraph(IDrawCommon& drawer, const CRect& value_rect, Com
 void CTaskBarDlg::OnClose()
 {
     // TODO: 在此添加消息处理程序代码和/或调用默认值
-    ::SendMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_TASKBAR_WND_CLOSED, 0, 0);
+    if (theApp.m_pMainWnd != nullptr && ::IsWindow(theApp.m_pMainWnd->GetSafeHwnd()))
+        ::SendMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_TASKBAR_WND_CLOSED, 0, 0);
 
     CDialogEx::OnClose();
+}
+
+void CTaskBarDlg::OnDestroy()
+{
+    CDialogEx::OnDestroy();
+
+    // 释放 OnInitDialog 中 GetDC() 获取的窗口 DC。
+    // 原实现从不 ReleaseDC，每次重建任务栏窗口（分辨率变化、Explorer 重启、副屏变化）都泄漏一个 DC，
+    // 长期运行会耗尽进程 DC 上限（默认 10000）导致整个 UI 无法绘制。
+    if (m_pDC != nullptr)
+    {
+        ReleaseDC(m_pDC);
+        m_pDC = nullptr;
+    }
 }
 
 void CTaskBarDlg::OnLButtonUp(UINT nFlags, CPoint point)

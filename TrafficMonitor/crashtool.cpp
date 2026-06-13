@@ -29,11 +29,21 @@ public:
         ::StringCchPrintf(szDumpFile, _countof(szDumpFile), TEXT("%s%04d%02d%02d%02d%02d%02d_%s.dmp"), m_szDumpFilePath,
                           stLocalTime.wYear, stLocalTime.wMonth, stLocalTime.wDay, stLocalTime.wHour, stLocalTime.wMinute, stLocalTime.wSecond, m_szModuleFileName);
 
+        // 安全性改进：
+        // 1. FILE_SHARE_READ only（去掉 FILE_SHARE_WRITE），避免其他进程在写入期间并发写同一文件
+        // 2. CREATE_NEW 拒绝覆盖已存在文件（CREATE_ALWAYS 会覆盖，配合可预测文件名存在符号链接劫持风险）
         HANDLE hDumpFile;
-        hDumpFile = ::CreateFile(szDumpFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_WRITE | FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+        hDumpFile = ::CreateFile(szDumpFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
         if (INVALID_HANDLE_VALUE == hDumpFile)
         {
-            return;
+            // CREATE_NEW 失败（文件已存在）时，尝试加毫秒后缀避免冲突与覆盖
+            ::StringCchPrintf(szDumpFile, _countof(szDumpFile), TEXT("%s%04d%02d%02d%02d%02d%02d%03d_%s.dmp"), m_szDumpFilePath,
+                              stLocalTime.wYear, stLocalTime.wMonth, stLocalTime.wDay, stLocalTime.wHour, stLocalTime.wMinute, stLocalTime.wSecond, stLocalTime.wMilliseconds, m_szModuleFileName);
+            hDumpFile = ::CreateFile(szDumpFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
+            if (INVALID_HANDLE_VALUE == hDumpFile)
+            {
+                return;
+            }
         }
 
 		m_dumpFile = szDumpFile;
@@ -171,23 +181,24 @@ private:
     void GetAppPath()
     {
         ZeroMemory(m_szModuleFileName, MAX_PATH);
-        ::GetModuleFileName(NULL, m_szDumpFilePath, _countof(m_szDumpFilePath));
-        for (int nIndex = (int)_tcslen(m_szDumpFilePath); nIndex >= 0; --nIndex)
+        TCHAR szExePath[MAX_PATH] = {0};
+        ::GetModuleFileName(NULL, szExePath, _countof(szExePath));
+        for (int nIndex = (int)_tcslen(szExePath); nIndex >= 0; --nIndex)
         {
-            if (m_szDumpFilePath[nIndex] == TEXT('\\'))
+            if (szExePath[nIndex] == TEXT('\\'))
             {
-                ::memmove(m_szModuleFileName, m_szDumpFilePath + nIndex + 1, (int)_tcslen(m_szDumpFilePath));
-                m_szDumpFilePath[nIndex + 1] = 0;
+                ::memmove(m_szModuleFileName, szExePath + nIndex + 1, (int)_tcslen(szExePath));
+                szExePath[nIndex + 1] = 0;  // 截断为 exe 所在目录
                 break;
             }
         }
+        // 优先使用 %TEMP%（用户可写、隔离）。GetTempPath 失败时回退到 exe 同目录，
+        // 而非 C:\（C:\ 根目录普通用户无写权限，管理员运行时会污染系统分区且全局可读）。
         ZeroMemory(m_szDumpFilePath, MAX_PATH);
         if (!::GetTempPath(MAX_PATH, m_szDumpFilePath))
         {
-            m_szDumpFilePath[0] = _T('C');
-            m_szDumpFilePath[1] = _T(':');
-            m_szDumpFilePath[2] = _T('\\');
-            m_szDumpFilePath[3] = _T('\0');
+            // 回退到 exe 同目录
+            StringCchCopy(m_szDumpFilePath, _countof(m_szDumpFilePath), szExePath);
         }
     }
 private:
@@ -199,13 +210,32 @@ private:
 
 namespace CRASHREPORT
 {
+    // 独立函数：把带析构的 CCrashReport 对象限制在此函数栈帧内。
+    // 这样外层 __UnhandledExceptionFilter 的 __try 块不持有需要展开的 C++ 对象，
+    // 避免 MSVC C2712（"不能在需要对象展开的函数中使用 __try"）。
+    static void DoCreateMiniDump(PEXCEPTION_POINTERS pEP)
+    {
+        CCrashReport cr;
+        cr.CreateMiniDump(pEP);
+    }
+
     static LONG WINAPI __UnhandledExceptionFilter(PEXCEPTION_POINTERS pEP)
     {
         ::SetErrorMode(0); //使用默认的
-        CCrashReport cr;
-        cr.CreateMiniDump(pEP);
-		cr.ShowCrashInfo(pEP);
-        return EXCEPTION_CONTINUE_SEARCH;
+        // 崩溃路径必须做最少的事：进程已处于未定义状态（堆可能已损坏），任何依赖堆/锁/GDI/COM
+        // 的操作都可能二次崩溃。原实现在此调用 ShowCrashInfo（内部 StackWalk64+SymInitialize+
+        // std::wstringstream 堆分配 + CMessageDlg::DoModal 创建窗口/消息泵），极易在崩溃时再次崩溃。
+        // 现在仅写 MiniDump（已含完整堆栈/模块信息，可用 WinDbg 事后分析），然后立即终止进程。
+        // 用 __try/__except 兜底，即使 dump 写入本身失败也不会再触发未处理异常。
+        __try
+        {
+            DoCreateMiniDump(pEP);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            // dump 写入失败也继续，确保进程能终止
+        }
+        return EXCEPTION_EXECUTE_HANDLER;
     }
 
     void StartCrashReport()

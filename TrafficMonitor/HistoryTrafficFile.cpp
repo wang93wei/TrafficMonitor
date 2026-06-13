@@ -102,9 +102,15 @@ void CHistoryTrafficFile::LoadSize()
 		if (index != wstring::npos)
 		{
 			index = current_line.find("\"", index + 6);
-			size_t index1 = current_line.find("\"", index + 1);
-			temp = current_line.substr(index + 1, index1 - index - 1);
-			m_size = atoll(temp.c_str());
+			if (index != string::npos)		// 找到第一个引号才继续
+			{
+				size_t index1 = current_line.find("\"", index + 1);
+				if (index1 != string::npos)		// 找到第二个引号才取子串，否则 substr 越界
+				{
+					temp = current_line.substr(index + 1, index1 - index - 1);
+					m_size = atoll(temp.c_str());
+				}
+			}
 		}
 	}
 }

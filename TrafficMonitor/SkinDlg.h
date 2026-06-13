@@ -36,7 +36,7 @@ protected:
     CLinkStatic m_skin_course;	//“皮肤制作教程”超链接
     CLinkStatic m_skin_download;	//“更多皮肤下载”超链接
     CLinkStatic m_open_skin_dir_lnk;
-    CSkinPreviewView* m_view;	//预览区视图类
+    CSkinPreviewView* m_view{ nullptr };	//预览区视图类
     CStatic m_preview_static;
     CStaticEx m_notify_static;	//显示提示信息的static控件
 
@@ -50,6 +50,7 @@ public:
     virtual BOOL OnInitDialog();
     afx_msg void OnLbnSelchangeList1();
     afx_msg void OnSize(UINT nType, int cx, int cy);
+    afx_msg void OnDestroy();
 protected:
     afx_msg LRESULT OnLinkClicked(WPARAM wParam, LPARAM lParam);
 public:

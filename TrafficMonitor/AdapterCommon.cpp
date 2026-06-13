@@ -85,13 +85,15 @@ void CAdapterCommon::GetIfTableInfo(vector<NetWorkConection>& adapters, MIB_IFTA
 		index = FindConnectionInIfTable(adapters[i].description, pIfTable);
 		if (index == -1)		//如果使用精确匹配的方式没有找到，则采用模糊匹配的方式再查找一次
 			index = FindConnectionInIfTableFuzzy(adapters[i].description, pIfTable);
-		//if (index != -1)
-		//{
-		adapters[i].index = index;
-		adapters[i].in_bytes = pIfTable->table[index].dwInOctets;
-		adapters[i].out_bytes = pIfTable->table[index].dwOutOctets;
-		adapters[i].description_2 = (const char*)pIfTable->table[index].bDescr;
-		//}
+		// 守卫：未找到匹配时 index 为 -1，访问 pIfTable->table[-1] 会越界读取（崩溃/数据污染）。
+		// 此时保持该连接的初始值（index=0，in/out_bytes=0）不变。
+		if (index >= 0 && static_cast<DWORD>(index) < pIfTable->dwNumEntries)
+		{
+			adapters[i].index = index;
+			adapters[i].in_bytes = pIfTable->table[index].dwInOctets;
+			adapters[i].out_bytes = pIfTable->table[index].dwOutOctets;
+			adapters[i].description_2 = (const char*)pIfTable->table[index].bDescr;
+		}
 	}
 }
 
@@ -147,8 +149,11 @@ int CAdapterCommon::FindConnectionInIfTableFuzzy(string connection, MIB_IFTABLE*
 			return i;
 	}
 	//如果还是没有找到，则使用字符串匹配算法查找
+	// 设定相似度阈值：低于此值视为未匹配，返回 -1。
+	// 原实现无论相似度多低都返回 best_index（初值0），导致把错误的网卡流量算到当前连接。
 	double max_degree{};
-	int best_index{};
+	int best_index{ -1 };
+	const double SIMILAR_THRESHOLD = 0.5;	// 相似度阈值
 	for (size_t i{}; i < pIfTable->dwNumEntries; i++)
 	{
 		string descr = (const char*)pIfTable->table[i].bDescr;
@@ -159,5 +164,8 @@ int CAdapterCommon::FindConnectionInIfTableFuzzy(string connection, MIB_IFTABLE*
 			best_index = i;
 		}
 	}
+	// 最高相似度仍低于阈值，认为未找到
+	if (max_degree < SIMILAR_THRESHOLD)
+		return -1;
 	return best_index;
 }

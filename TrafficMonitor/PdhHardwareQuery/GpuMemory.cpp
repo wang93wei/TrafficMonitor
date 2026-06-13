@@ -2,6 +2,7 @@
 #include "GpuMemory.h"
 #include "GpuMemorySelection.h"
 #include <dxgi.h>
+#include <wrl/client.h>
 
 #pragma comment(lib, "DXGI.lib")
 
@@ -103,23 +104,20 @@ namespace
 
     bool GetGpuMemoryLimitFromDxgi(const std::vector<CPdhQuery::CounterValueItem>& limitValueItems, unsigned long long& limit)
     {
-        IDXGIFactory1* p_factory{};
-        if (FAILED(::CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&p_factory))) || p_factory == nullptr)
+        // 使用 ComPtr 管理 COM 对象，任何提前 return / 异常都能正确释放，避免裸指针泄漏。
+        Microsoft::WRL::ComPtr<IDXGIFactory1> p_factory;
+        if (FAILED(::CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(p_factory.GetAddressOf()))) || p_factory == nullptr)
             return false;
 
         std::vector<GpuMemorySelection::AdapterCandidate> candidates;
         for (UINT i{}; ; ++i)
         {
-            IDXGIAdapter1* p_adapter{};
-            HRESULT hr{ p_factory->EnumAdapters1(i, &p_adapter) };
+            Microsoft::WRL::ComPtr<IDXGIAdapter1> p_adapter;
+            HRESULT hr{ p_factory->EnumAdapters1(i, p_adapter.GetAddressOf()) };
             if (hr == DXGI_ERROR_NOT_FOUND)
                 break;
             if (FAILED(hr) || p_adapter == nullptr)
-            {
-                if (p_adapter != nullptr)
-                    p_adapter->Release();
                 continue;
-            }
 
             DXGI_ADAPTER_DESC1 desc{};
             if (SUCCEEDED(p_adapter->GetDesc1(&desc)))
@@ -133,9 +131,9 @@ namespace
                 GetGpuMemoryCounterValueByLuid(limitValueItems, desc.AdapterLuid, candidate.pdh_dedicated_limit);
                 candidates.push_back(candidate);
             }
-            p_adapter->Release();
+            // p_adapter 由 ComPtr 自动释放
         }
-        p_factory->Release();
+        // p_factory 由 ComPtr 自动释放
 
         return GpuMemorySelection::SelectPreferredAdapterMemoryLimit(candidates, limit);
     }

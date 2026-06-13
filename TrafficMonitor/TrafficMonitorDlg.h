@@ -143,6 +143,9 @@ protected:
     bool m_hardware_monitor_disabled_by_error{ false };  //是否因连续错误而禁用了硬件监控
     static const int MAX_HARDWARE_MONITOR_ERRORS = 5;    //连续错误达到此数值后自动禁用硬件监控
 #endif
+    CString m_pending_hw_error_msg;     //后台线程写入、UI线程读取的硬件监控错误文本（配合 WM_HARDWARE_MONITOR_ERROR）
+    // 放在 #ifndef 外：OnHardwareMonitorError 处理函数和消息映射不受 WITHOUT_TEMPERATURE 限制，
+    // 故成员也须在块外，保证 Lite 版（定义 WITHOUT_TEMPERATURE）也能编译。
 public:
     void ExitMonitorThread();       //停止监控线程
 
@@ -270,6 +273,7 @@ protected:
     afx_msg LRESULT OnDpichanged(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnTaskbarWndClosed(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnMonitorInfoUpdated(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnHardwareMonitorError(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnDisplaychange(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnReopenTaksbarWnd(WPARAM wParam, LPARAM lParam);
 public:

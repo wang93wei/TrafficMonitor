@@ -9,8 +9,13 @@ CPdhQuery::CPdhQuery(LPCTSTR _fullCounterPath)
 
 CPdhQuery::~CPdhQuery()
 {
-    //关闭查询
-    PdhCloseQuery(query);
+    //关闭查询（已初始化时才关闭，避免对未初始化/失败状态的句柄调用）
+    if (query != nullptr)
+    {
+        PdhCloseQuery(query);
+        query = nullptr;
+        counter = nullptr;
+    }
 }
 
 bool CPdhQuery::Initialize()
@@ -18,11 +23,23 @@ bool CPdhQuery::Initialize()
     if (isInitialized)
         return true;
 
+    // 若之前 Initialize 部分成功（如 PdhOpenQuery 成功但后续失败）留下了句柄，
+    // 重新进入时必须先释放，避免句柄泄漏。
+    if (query != nullptr)
+    {
+        PdhCloseQuery(query);
+        query = nullptr;
+        counter = nullptr;
+    }
+
     PDH_STATUS status;
     //打开查询
     status = PdhOpenQuery(NULL, NULL, &query);
     if (status != ERROR_SUCCESS)
+    {
+        query = nullptr;
         return false;
+    }
 
     //添加计数器
     status = PdhAddCounter(query, fullCounterPath.GetString(), NULL, &counter);
@@ -34,6 +51,7 @@ bool CPdhQuery::Initialize()
         {
             PdhCloseQuery(query);
             query = nullptr;
+            counter = nullptr;
             return false;
         }
     }
@@ -86,13 +104,16 @@ bool CPdhQuery::QueryValues(std::vector<CounterValueItem>& values)
                 for (DWORD i = 0; i < dwItemCount; i++)
                 {
                     CounterValueItem value_item;
-                    value_item.name = pItems[i].szName;
+                    // szName 在某些畸形实例下可能为 NULL，构造 wstring 时必须防御
+                    value_item.name = (pItems[i].szName != nullptr) ? pItems[i].szName : L"";
                     value_item.value = pItems[i].FmtValue.doubleValue;
                     values.push_back(value_item);
                 }
             }
             else
             {
+                // 失败路径必须先释放已分配的缓冲，否则内存泄漏
+                free(pItems);
                 return false;
             }
 

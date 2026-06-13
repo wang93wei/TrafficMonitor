@@ -104,12 +104,20 @@ void CNetworkInfoDlg::ShowInfo()
     m_info_list.SetItemText(10, 1, temp);
     //自程序启动以来已接收字节数
     unsigned __int64 in_bytes_since_start;
-    in_bytes_since_start = network_info.dwInOctets - GetConnection(m_connection_selected).in_bytes;
+    // 网卡重置/休眠唤醒时 dwInOctets 可能小于初始 in_bytes，unsigned 减法会下溢成几十 EB 的乱值。
+    // 这里用条件表达式 clamp 到 0：当 current < start 时记为 0。
+    {
+        unsigned __int64 start_bytes = GetConnection(m_connection_selected).in_bytes;
+        in_bytes_since_start = (network_info.dwInOctets >= start_bytes) ? (network_info.dwInOctets - start_bytes) : 0;
+    }
     temp.Format(_T("%s (%s)"), CCommon::IntToString(in_bytes_since_start, true, true), CCommon::DataSizeToString(in_bytes_since_start));
     m_info_list.SetItemText(11, 1, temp);
     //自程序启动以来已发送字节数
     unsigned __int64 out_bytes_since_start;
-    out_bytes_since_start = network_info.dwOutOctets - GetConnection(m_connection_selected).out_bytes;
+    {
+        unsigned __int64 start_bytes = GetConnection(m_connection_selected).out_bytes;
+        out_bytes_since_start = (network_info.dwOutOctets >= start_bytes) ? (network_info.dwOutOctets - start_bytes) : 0;
+    }
     temp.Format(_T("%s (%s)"), CCommon::IntToString(out_bytes_since_start, true, true), CCommon::DataSizeToString(out_bytes_since_start));
     m_info_list.SetItemText(12, 1, temp);
 

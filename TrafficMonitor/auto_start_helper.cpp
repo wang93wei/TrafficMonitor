@@ -229,7 +229,10 @@ bool create_auto_start_task_for_this_user(bool runElevated)
     // ------------------------------------------------------
     //  Save the task in the TrafficMonitor folder.
     {
-        _variant_t SDDL_FULL_ACCESS_FOR_EVERYONE = L"D:(A;;FA;;;WD)";
+        // 安全性修复：原 SDDL "D:(A;;FA;;;WD)" 允许 Everyone 完全控制该计划任务，
+        // 低权限同机攻击者可篡改/替换任务指向的 exe（本地提权向量）。
+        // 传入空 variant 让任务计划程序使用默认安全描述符（仅创建者与 SYSTEM 有权限）。
+        _variant_t sddl_default;
         hr = pTaskFolder->RegisterTaskDefinition(
             _bstr_t(wstrTaskName.c_str()),
             pTask,
@@ -237,7 +240,7 @@ bool create_auto_start_task_for_this_user(bool runElevated)
             _variant_t(username_domain),
             _variant_t(),
             TASK_LOGON_INTERACTIVE_TOKEN,
-            SDDL_FULL_ACCESS_FOR_EVERYONE,
+            sddl_default,
             &pRegisteredTask);
         ExitOnFailure(hr, "Error saving the Task : %x", hr);
     }

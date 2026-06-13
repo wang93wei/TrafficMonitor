@@ -10,6 +10,10 @@ class CSkinPreviewView : public CScrollView
 {
 	DECLARE_DYNCREATE(CSkinPreviewView)
 
+	// CSkinDlg 负责通过 CreateObject() 创建并在 OnDestroy 中 delete 此视图，
+	// 需访问 protected 析构函数，故声明为友元。
+	friend class CSkinDlg;
+
 protected:
 	CSkinPreviewView();           // 动态创建所使用的受保护的构造函数
 	virtual ~CSkinPreviewView();

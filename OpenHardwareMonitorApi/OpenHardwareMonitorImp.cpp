@@ -4,10 +4,14 @@
 
 #include "OpenHardwareMonitorImp.h"
 #include <vector>
+#include <mutex>
 
 namespace OpenHardwareMonitorApi
 {
     static std::wstring error_message;
+    // error_message 被 GetHardwareInfo（定时器线程）写、GetErrorMessage（UI 线程）读，
+    // std::wstring 非线程安全，必须用互斥量保护，否则并发读写会导致堆损坏/崩溃。
+    static std::mutex error_message_mutex;
 
     //将CRL的String类型转换成C++的std::wstring类型
     static std::wstring ClrStringToStdWstring(System::String^ str)
@@ -25,6 +29,20 @@ namespace OpenHardwareMonitorApi
         }
     }
 
+    // 安全地读取传感器数值。
+    // ISensor::Value 是 Nullable<float>（即 float?），传感器未就绪时为 null，
+    // 直接 Convert::ToDouble(nullptr) 会抛 NullReferenceException。这里判 HasValue，
+    // null 时返回 false 让调用方跳过该传感器，避免异常和错误值。
+    static bool SafeGetSensorValue(ISensor^ sensor, float& out_value)
+    {
+        if (sensor != nullptr && sensor->Value.HasValue)
+        {
+            out_value = sensor->Value.Value;
+            return true;
+        }
+        return false;
+    }
+
 
     std::shared_ptr<IOpenHardwareMonitor> CreateInstance()
     {
@@ -36,13 +54,16 @@ namespace OpenHardwareMonitorApi
         }
         catch (System::Exception^ e)
         {
-            error_message = ClrStringToStdWstring(e->Message);
+            std::wstring msg = ClrStringToStdWstring(e->Message);
+            std::lock_guard<std::mutex> lock(error_message_mutex);
+            error_message = msg;
         }
         return pMonitor;
     }
 
     std::wstring GetErrorMessage()
     {
+        std::lock_guard<std::mutex> lock(error_message_mutex);
         return error_message;
     }
 
@@ -108,38 +129,73 @@ namespace OpenHardwareMonitorApi
 
     void COpenHardwareMonitor::SetCpuEnable(bool enable)
     {
-        MonitorGlobal::Instance()->computer->IsCpuEnabled = enable;
+        // CLR 冷启动期间（后台线程 Init 未完成）或 Init 失败时，computer 可能为 nullptr。
+        // 访问 nullptr->IsCpuEnabled 会抛 NullReferenceException，从 native 栈逃逸导致进程崩溃。
+        // C++/CLI 不会自动把托管异常转成 std::exception，必须显式 try/catch。
+        try
+        {
+            auto computer = MonitorGlobal::Instance()->computer;
+            if (computer != nullptr)
+                computer->IsCpuEnabled = enable;
+        }
+        catch (System::Exception^) { /* 静默忽略，避免跨边界异常崩溃 */ }
     }
 
     void COpenHardwareMonitor::SetGpuEnable(bool enable)
     {
-        MonitorGlobal::Instance()->computer->IsGpuEnabled = enable;
+        try
+        {
+            auto computer = MonitorGlobal::Instance()->computer;
+            if (computer != nullptr)
+                computer->IsGpuEnabled = enable;
+        }
+        catch (System::Exception^) {}
     }
 
     void COpenHardwareMonitor::SetHddEnable(bool enable)
     {
-        MonitorGlobal::Instance()->computer->IsStorageEnabled = enable;
+        try
+        {
+            auto computer = MonitorGlobal::Instance()->computer;
+            if (computer != nullptr)
+                computer->IsStorageEnabled = enable;
+        }
+        catch (System::Exception^) {}
     }
 
     void COpenHardwareMonitor::SetMainboardEnable(bool enable)
     {
-        MonitorGlobal::Instance()->computer->IsMotherboardEnabled = enable;
+        try
+        {
+            auto computer = MonitorGlobal::Instance()->computer;
+            if (computer != nullptr)
+                computer->IsMotherboardEnabled = enable;
+        }
+        catch (System::Exception^) {}
     }
 
     bool COpenHardwareMonitor::GetCPUFreq(IHardware^ hardware, float& freq) {
+        float max_clock_mhz = -1.0f;
         for (int i = 0; i < hardware->Sensors->Length; i++)
         {
             if (hardware->Sensors[i]->SensorType == SensorType::Clock)
             {
                 String^ name = hardware->Sensors[i]->Name;
-                if (name != L"Bus Speed")
-                    m_all_cpu_clock[ClrStringToStdWstring(name)] = Convert::ToDouble(hardware->Sensors[i]->Value);
+                // 只取 CPU 核心（LibreHardwareMonitor 命名为 "Core #N"）的时钟，
+                // 跳过 "Bus Speed" 等非核心时钟。取所有核心时钟的最大值作为当前主频，
+                // 而非把所有时钟算术平均（之前的实现会把内存/总线等无关时钟也算进去）。
+                std::wstring wname = ClrStringToStdWstring(name);
+                if (wname.rfind(L"Core", 0) == 0)
+                {
+                    float clock;
+                    if (SafeGetSensorValue(hardware->Sensors[i], clock) && clock > max_clock_mhz)
+                        max_clock_mhz = clock;
+                }
             }
         }
-        float sum{};
-        for (auto i : m_all_cpu_clock)
-            sum += i.second;
-        freq = sum / m_all_cpu_clock.size() / 1000.0;
+        if (max_clock_mhz < 0)
+            return false;     // 没有找到核心时钟传感器
+        freq = max_clock_mhz / 1000.0f;
         return true;
     }
 
@@ -150,10 +206,10 @@ namespace OpenHardwareMonitorApi
             if (hardware->Sensors[i]->SensorType == SensorType::Load)
             {
                 String^ name = hardware->Sensors[i]->Name;
-                if (name != L"CPU Total")
+                if (name == L"CPU Total")
                 {
-                    cpu_usage = Convert::ToDouble(hardware->Sensors[i]->Value);
-                    return true;
+                    if (SafeGetSensorValue(hardware->Sensors[i], cpu_usage))
+                        return true;
                 }
             }
         }
@@ -182,7 +238,9 @@ namespace OpenHardwareMonitorApi
             //找到温度传感器
             if (hardware->Sensors[i]->SensorType == SensorType::Temperature)
             {
-                float cur_temperture = Convert::ToDouble(hardware->Sensors[i]->Value);
+                float cur_temperture;
+                if (!SafeGetSensorValue(hardware->Sensors[i], cur_temperture))
+                    continue;   // 传感器值未就绪，跳过
                 all_temperature.push_back(cur_temperture);
                 if (hardware->Sensors[i]->Name == temperature_name) //如果找到了名称为temperature_name的温度传感器，则将温度保存到core_temperature里
                     core_temperature = cur_temperture;
@@ -222,7 +280,9 @@ namespace OpenHardwareMonitorApi
             {
                 String^ name = hardware->Sensors[i]->Name;
                 //保存每个CPU传感器的温度
-                m_all_cpu_temperature[ClrStringToStdWstring(name)] = Convert::ToDouble(hardware->Sensors[i]->Value);
+                float temp_val;
+                if (SafeGetSensorValue(hardware->Sensors[i], temp_val))
+                    m_all_cpu_temperature[ClrStringToStdWstring(name)] = temp_val;
             }
         }
         //计算平均温度
@@ -244,7 +304,9 @@ namespace OpenHardwareMonitorApi
             //找到负载
             if (hardware->Sensors[i]->SensorType == SensorType::Load)
             {
-                float cur_gpu_usage = Convert::ToDouble(hardware->Sensors[i]->Value);
+                float cur_gpu_usage;
+                if (!SafeGetSensorValue(hardware->Sensors[i], cur_gpu_usage))
+                    continue;   // 传感器值未就绪，跳过
                 if (hardware->Sensors[i]->Name == L"GPU Core")
                 {
                     gpu_usage = cur_gpu_usage;
@@ -269,8 +331,8 @@ namespace OpenHardwareMonitorApi
             {
                 if (hardware->Sensors[i]->Name == L"Total Activity")
                 {
-                    hdd_usage = Convert::ToDouble(hardware->Sensors[i]->Value);
-                    return true;
+                    if (SafeGetSensorValue(hardware->Sensors[i], hdd_usage))
+                        return true;
                 }
             }
         }
@@ -334,7 +396,10 @@ namespace OpenHardwareMonitorApi
     void COpenHardwareMonitor::GetHardwareInfo()
     {
         ResetAllValues();
-        error_message.clear();
+        {
+            std::lock_guard<std::mutex> lock(error_message_mutex);
+            error_message.clear();
+        }
         try
         {
             auto computer = MonitorGlobal::Instance()->computer;
@@ -395,7 +460,9 @@ namespace OpenHardwareMonitorApi
         }
         catch (System::Exception^ e)
         {
-            error_message = ClrStringToStdWstring(e->Message);
+            std::wstring msg = ClrStringToStdWstring(e->Message);
+            std::lock_guard<std::mutex> lock(error_message_mutex);
+            error_message = msg;
         }
     }
 

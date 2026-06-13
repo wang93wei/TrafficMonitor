@@ -106,6 +106,7 @@ BEGIN_MESSAGE_MAP(CSkinDlg, CBaseDialog)
     ON_MESSAGE(WM_LINK_CLICKED, &CSkinDlg::OnLinkClicked)
     ON_BN_CLICKED(IDC_SKIN_AUTO_ADAPT_BUTTON, &CSkinDlg::OnBnClickedSkinAutoAdaptButton)
     ON_BN_CLICKED(IDC_SKIN_AUTO_ADAPT_CHECK, &CSkinDlg::OnBnClickedSkinAutoAdaptCheck)
+    ON_WM_DESTROY()
 END_MESSAGE_MAP()
 
 
@@ -170,6 +171,22 @@ void CSkinDlg::OnSize(UINT nType, int cx, int cy)
     // TODO: 在此处添加消息处理程序代码
     if (m_preview_static.m_hWnd != NULL && nType != SIZE_MINIMIZED && m_view != nullptr)
         m_view->MoveWindow(CalculateViewRect());
+}
+
+void CSkinDlg::OnDestroy()
+{
+    CBaseDialog::OnDestroy();
+
+    // OnInitDialog 中通过 RUNTIME_CLASS->CreateObject()（等同 new）创建的预览视图，
+    // 原实现从不 delete，每打开一次皮肤对话框就泄漏一个 CScrollView 对象及其窗口/GDI 资源。
+    // 必须先 DestroyWindow 销毁子窗口，再 delete 对象本身。
+    if (m_view != nullptr)
+    {
+        if (::IsWindow(m_view->GetSafeHwnd()))
+            m_view->DestroyWindow();
+        delete m_view;
+        m_view = nullptr;
+    }
 }
 
 

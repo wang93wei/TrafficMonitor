@@ -1552,19 +1552,30 @@ auto CD2D1BitmapCache::GetCachedBitmap(HBITMAP hbitmap)
     }
     else
     {
-        AddHBitmap(hbitmap);
-        return m_sp_data->m_cache_map[hbitmap].m_cache;
+        // 注意：此处已持有 m_mutex（非递归）。不能再调用 AddHBitmap（它会二次加锁导致死锁），
+        // 必须内联执行 AddHBitmap 的插入逻辑。
+        try
+        {
+            auto p_d2d1_bitmap = CreateD2D1BitmapFromHBitmap(m_p_render_target, hbitmap);
+            m_sp_data->m_cache_map[hbitmap] = {
+                p_d2d1_bitmap,
+                std::chrono::steady_clock::now(),
+                CD2D1BitmapCache::CreateD2D1BitmapFromHBitmap};
+            return p_d2d1_bitmap;
+        }
+        catch (CWICException& ex)
+        {
+            LogHResultException(ex);
+            return ComPtr<ID2D1Bitmap>{};   // 创建失败返回空，调用方需判空
+        }
     }
 }
 
 bool CD2D1BitmapCache::IsHBitmapExist(HBITMAP hbitmap) const
 {
     auto existing_it = m_sp_data->m_cache_map.find(hbitmap);
-    if (existing_it == m_sp_data->m_cache_map.end())
-    {
-        return true;
-    }
-    return false;
+    // 修正：返回值语义之前是反的（没找到返回 true），导致 AddHBitmap 永远不真正添加缓存。
+    return existing_it != m_sp_data->m_cache_map.end();
 }
 
 void CD2D1BitmapCache::GCImpl(std::shared_ptr<HeapData> sp_data)
@@ -1881,7 +1892,8 @@ void CTaskBarDlgDrawCommon::DrawBitmap(HBITMAP hbitmap, CPoint start_point, CSiz
     auto p_d2d1_bitmap = m_p_d2d1_device_context_support->GetCachedBitmap(hbitmap);
     if (!p_d2d1_bitmap)
     {
-        CD2D1BitmapCache::CreateD2D1BitmapFromHBitmap(m_p_device_context, hbitmap);
+        // GetCachedBitmap 内部已尝试创建并入缓存；若仍为空，说明位图创建失败（如 WIC 异常），放弃绘制。
+        return;
     }
 
     float opacity = static_cast<float>(alpha) / 255.f;

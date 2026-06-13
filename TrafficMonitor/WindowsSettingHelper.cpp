@@ -12,18 +12,19 @@ void CWindowsSettingHelper::CheckWindows10LightTheme()
 {
     if (theApp.m_win_version.IsWindows10OrLater())
     {
-        HKEY hKey;
+        HKEY hKey = nullptr;    // 初始化，避免打开失败时 RegCloseKey 关闭野句柄
         DWORD dwThemeData(0);
         LONG lRes = RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0, KEY_READ, &hKey);
         if (lRes == ERROR_SUCCESS) {
             GetDWORDRegKeyData(hKey, L"SystemUsesLightTheme", dwThemeData);
             m_light_theme = (dwThemeData != 0);
+            RegCloseKey(hKey);
         }
         else
         {
             m_light_theme = false;
+            // hKey 为 nullptr（打开失败），不调用 RegCloseKey
         }
-        RegCloseKey(hKey);
     }
     else
     {
@@ -69,9 +70,14 @@ LONG CWindowsSettingHelper::GetDWORDRegKeyData(HKEY hKey, const wstring& strValu
 {
     DWORD dwBufferSize(sizeof(DWORD));
     DWORD dwResult(0);
-    LONG lError = ::RegQueryValueExW(hKey, strValueName.c_str(), NULL, NULL, reinterpret_cast<LPBYTE>(&dwResult), &dwBufferSize);
-    if (lError == ERROR_SUCCESS)
+    DWORD dwType = 0;
+    // 必须校验注册表值的类型：若实际是 REG_SZ/REG_BINARY，原实现把前 4 字节当 DWORD 返回成功，
+    // 调用方拿到垃圾值却以为读取成功，影响 TaskbarDa/TaskbarAl/MMTaskbarEnabled/主题判断正确性。
+    LONG lError = ::RegQueryValueExW(hKey, strValueName.c_str(), NULL, &dwType, reinterpret_cast<LPBYTE>(&dwResult), &dwBufferSize);
+    if (lError == ERROR_SUCCESS && dwType == REG_DWORD)
         dwValueData = dwResult;
+    else if (lError == ERROR_SUCCESS)
+        lError = ERROR_INVALID_PARAMETER;   // 类型不匹配，返回失败
     return lError;
 }
 

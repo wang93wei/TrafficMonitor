@@ -251,9 +251,9 @@ void TaskBarSettingData::ValidWindowOffsetTop()
 void TaskBarSettingData::ValidWindowOffsetLeft()
 {
     if (window_offset_left < -800)
-        window_offset_top = -800;
-    if (window_offset_top > 800)
-        window_offset_top = 800;
+        window_offset_left = -800;
+    if (window_offset_left > 800)
+        window_offset_left = 800;
 }
 
 unsigned __int64 TaskBarSettingData::GetNetspeedFigureMaxValueInBytes() const

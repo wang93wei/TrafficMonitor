@@ -50,33 +50,39 @@ static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
     return TRUE;
 }
 
-// 比较函数：按显示器的左上角坐标排序
+// 判断任务栏中心点落在哪个显示器（返回该显示器在 monitors 中的索引，找不到返回 -1）。
+// 用中心点而非左上角，避免负坐标显示器或任务栏贴边时对多个显示器同时判中的问题，
+// 从而保证 std::sort 的比较器满足严格弱序（传递性、反对称性）。
+static int FindMonitorIndexOfTaskbar(const TaskbarInfo& taskbar)
+{
+    CPoint center(taskbar.rect.left + taskbar.rect.Width() / 2,
+                  taskbar.rect.top + taskbar.rect.Height() / 2);
+    for (size_t i = 0; i < monitors.size(); ++i)
+    {
+        if (monitors[i].rect.PtInRect(center))
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+// 比较函数：按显示器枚举顺序排序任务栏（满足严格弱序）
 static bool CompareTaskbarByMonitorOrder(const TaskbarInfo& a, const TaskbarInfo& b)
 {
-    // 遍历所有显示器
-    for (const auto& monitor : monitors)
-    {
-        // 检查任务栏 a 是否在当前显示器内
-        bool aInMonitor = (a.rect.left >= monitor.rect.left && a.rect.top >= monitor.rect.top);
-        // 检查任务栏 b 是否在当前显示器内
-        bool bInMonitor = (b.rect.left >= monitor.rect.left && b.rect.top >= monitor.rect.top);
+    int idx_a = FindMonitorIndexOfTaskbar(a);
+    int idx_b = FindMonitorIndexOfTaskbar(b);
 
-        // 如果 a 在当前显示器内而 b 不在，则 a 应该在 b 前面
-        if (aInMonitor && !bInMonitor)
-            return true;
-        // 如果 b 在当前显示器内而 a 不在，则 b 应该在 a 前面
-        if (bInMonitor && !aInMonitor)
-            return false;
-        // 如果 a 和 b 都在当前显示器内，则按任务栏的位置排序
-        if (aInMonitor && bInMonitor)
-        {
-            if (a.rect.left != b.rect.left)
-                return a.rect.left < b.rect.left;
-            return a.rect.top < b.rect.top;
-        }
-    }
-    // 默认情况下，a 和 b 相等
-    return false;
+    // 先按显示器索引排序（找不到的视为在所有显示器之后，保证传递性）
+    if (idx_a != idx_b)
+        return idx_a < idx_b;
+
+    // 同一显示器内（或都找不到），按 left 再按 top 排序，保证稳定的全序
+    if (a.rect.left != b.rect.left)
+        return a.rect.left < b.rect.left;
+    if (a.rect.top != b.rect.top)
+        return a.rect.top < b.rect.top;
+
+    // 矩形完全相同，按 HWND 地址做最终决胜，确保严格弱序（a==b 时返回 false）
+    return reinterpret_cast<uintptr_t>(a.hwnd) < reinterpret_cast<uintptr_t>(b.hwnd);
 }
 
 void CTaskbarHelper::GetAllSecondaryDisplayTaskbar(std::vector<HWND>& secondary_taskbars)
@@ -103,6 +109,8 @@ void CTaskbarHelper::GetAllSecondaryDisplayTaskbar(std::vector<HWND>& secondary_
 
 int CTaskbarHelper::GetDisplayNum()
 {
+    // 注意：本函数只枚举显示器。全局 taskbars 的残留由 GetAllSecondaryDisplayTaskbar
+    // 在开头统一 clear 两者来保证一致性，这里无需处理 taskbars。
     monitors.clear();
     EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, 0);
     return static_cast<int>(monitors.size());
@@ -110,6 +118,7 @@ int CTaskbarHelper::GetDisplayNum()
 
 int CTaskbarHelper::GetSecondaryTaskbarNum()
 {
+    // 同上，只枚举副屏任务栏。monitors 的残留由 GetAllSecondaryDisplayTaskbar 统一清理。
     taskbars.clear();
     EnumWindows(EnumWindowsProc, 0);
     return static_cast<int>(taskbars.size());
