@@ -565,6 +565,9 @@
     <ClInclude Include="PdhHardwareQuery\DiskUsage.h">
       <Filter>源文件和头文件\公共的类\PdhHardwareQuery</Filter>
     </ClInclude>
+    <ClInclude Include="DrawCommonHelper.h">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="StaticEx.cpp">
@@ -845,6 +848,12 @@
     </ClCompile>
     <ClCompile Include="PdhHardwareQuery\DiskUsage.cpp">
       <Filter>源文件和头文件\公共的类\PdhHardwareQuery</Filter>
+    </ClCompile>
+    <ClCompile Include="IDrawCommon.cpp">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClCompile>
+    <ClCompile Include="DrawCommonHelper.cpp">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

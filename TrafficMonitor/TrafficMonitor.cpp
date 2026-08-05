@@ -74,6 +74,7 @@ void CTrafficMonitorApp::LoadConfig()
     m_general_data.show_all_interface = ini.GetBool(L"general", L"show_all_interface", false);
     bool is_chinese_language{ m_str_table.IsSimplifiedChinese() };     //当前语言是否为简体中文
     m_general_data.update_source = ini.GetInt(L"general", L"update_source", is_chinese_language ? 1 : 0);   //如果当前语言为简体，则默认更新源为Gitee，否则为GitHub
+    m_general_data.cpu_usage_acquire_method = static_cast<GeneralSettingData::CpuUsageAcquireMethod>(ini.GetInt(L"general", L"cpu_usage_acquire_method", GeneralSettingData::CA_PDH));
     m_general_data.monitor_time_span = ini.GetInt(L"general", L"monitor_time_span", 1000);
     if (m_general_data.monitor_time_span < MONITOR_TIME_SPAN_MIN || m_general_data.monitor_time_span > MONITOR_TIME_SPAN_MAX)
         m_general_data.monitor_time_span = 1000;
@@ -215,7 +216,7 @@ void CTrafficMonitorApp::LoadConfig()
     ini.LoadPluginDisplayStr(L"plugin_display_str_taskbar_window", m_taskbar_data.disp_str, false);
 
     m_taskbar_data.tbar_wnd_on_left = ini.GetBool(_T("task_bar"), _T("task_bar_wnd_on_left"), false);
-    m_taskbar_data.speed_short_mode = ini.GetBool(_T("task_bar"), _T("task_bar_speed_short_mode"), false);
+    m_taskbar_data.speed_short_mode = ini.GetBool(_T("task_bar"), _T("task_bar_speed_short_mode"), true);
     m_taskbar_data.tbar_wnd_snap = ini.GetBool(_T("task_bar"), _T("task_bar_wnd_snap"), false);
     m_taskbar_data.unit_byte = ini.GetBool(_T("task_bar"), _T("unit_byte"), true);
     m_taskbar_data.speed_unit = static_cast<SpeedUnit>(ini.GetInt(_T("task_bar"), _T("task_bar_speed_unit"), 0));
@@ -223,7 +224,7 @@ void CTrafficMonitorApp::LoadConfig()
     m_taskbar_data.hide_percent = ini.GetBool(_T("task_bar"), _T("task_bar_hide_percent"), false);
     m_taskbar_data.value_right_align = ini.GetBool(_T("task_bar"), _T("value_right_align"), true);
     m_taskbar_data.horizontal_arrange = ini.GetBool(_T("task_bar"), _T("horizontal_arrange"), false);
-    m_taskbar_data.show_status_bar = ini.GetBool(_T("task_bar"), _T("show_status_bar"), false);
+    m_taskbar_data.show_status_bar = ini.GetBool(_T("task_bar"), _T("show_status_bar"), true);
     m_taskbar_data.separate_value_unit_with_space = ini.GetBool(_T("task_bar"), _T("separate_value_unit_with_space"), true);
     m_taskbar_data.show_tool_tip = ini.GetBool(_T("task_bar"), _T("show_tool_tip"), true);
     m_taskbar_data.digits_number = ini.GetInt(_T("task_bar"), _T("digits_number"), 4);
@@ -260,10 +261,10 @@ void CTrafficMonitorApp::LoadConfig()
     m_taskbar_data.plugin_display_item.FromString(ini.GetString(L"task_bar", L"plugin_display_item", L""));
     m_taskbar_data.auto_save_taskbar_color_settings_to_preset = ini.GetBool(L"task_bar", L"auto_save_taskbar_color_settings_to_preset", true);
 
-    m_taskbar_data.show_netspeed_figure = ini.GetBool(L"task_bar", L"show_netspeed_figure", false);
-    m_taskbar_data.netspeed_figure_max_value = ini.GetInt(L"task_bar", L"netspeed_figure_max_value", 512);
-    m_taskbar_data.netspeed_figure_max_value_unit = ini.GetInt(L"task_bar", L"netspeed_figure_max_value_unit", 0);
-    m_taskbar_data.graph_color_following_system = ini.GetBool(L"task_bar", L"graph_color_following_system", false);
+    m_taskbar_data.show_netspeed_figure = ini.GetBool(L"task_bar", L"show_netspeed_figure", true);
+    m_taskbar_data.netspeed_figure_max_value = ini.GetInt(L"task_bar", L"netspeed_figure_max_value", 10);
+    m_taskbar_data.netspeed_figure_max_value_unit = ini.GetInt(L"task_bar", L"netspeed_figure_max_value_unit", 1);
+    m_taskbar_data.graph_color_following_system = ini.GetBool(L"task_bar", L"graph_color_following_system", true);
 
     if (CTaskBarDlgDrawCommonSupport::CheckSupport())
         m_taskbar_data.disable_d2d = ini.GetBool(L"task_bar", L"disable_d2d", true);
@@ -298,6 +299,7 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteString(_T("general"), _T("language"), m_general_data.language.toConfigString());
     ini.WriteInt(L"general", L"update_source", m_general_data.update_source);
     ini.WriteBool(L"general", L"show_all_interface", m_general_data.show_all_interface);
+    ini.WriteInt(L"general", L"cpu_usage_acquire_method", m_general_data.cpu_usage_acquire_method);
     ini.WriteInt(L"general", L"monitor_time_span", m_general_data.monitor_time_span);
     ini.WriteString(L"general", L"hard_disk_name", m_general_data.hard_disk_name);
     ini.WriteString(L"general", L"cpu_core_name", m_general_data.cpu_core_name);
@@ -1041,6 +1043,10 @@ BOOL CTrafficMonitorApp::InitInstance()
         }
     }
 
+    //初始化GDI+
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+    GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
+
     //载入插件
     LoadPluginDisabledSettings();
     m_plugins.LoadPlugins();
@@ -1118,10 +1124,6 @@ BOOL CTrafficMonitorApp::InitInstance()
 #ifdef _DEBUG
     CTest::Test();
 #endif
-
-    //初始化GDI+
-    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-    GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
     SendSettingsToPlugin();
 
@@ -1420,7 +1422,7 @@ int CTrafficMonitorApp::ExitInstance()
 
 int CTrafficMonitorApp::GetAPIVersion()
 {
-    return 0;
+    return 1;
 }
 
 const wchar_t* CTrafficMonitorApp::GetVersion()
@@ -1506,7 +1508,7 @@ const wchar_t* CTrafficMonitorApp::GetPluginConfigDir() const
 
 int CTrafficMonitorApp::GetDPI(DPIType type) const
 {
-    CTrafficMonitorDlg* pMainWnd = dynamic_cast<CTrafficMonitorDlg*>(m_pMainWnd);
+    CTrafficMonitorDlg* pMainWnd = CTrafficMonitorDlg::Instance();
     switch (type)
     {
     case DPI_MAIN_WND:
@@ -1520,6 +1522,16 @@ int CTrafficMonitorApp::GetDPI(DPIType type) const
         return m_dpi;
     }
     return 0;
+}
+
+void* CTrafficMonitorApp::GetMainWindowHwnd()
+{
+    return m_pMainWnd->GetSafeHwnd();
+}
+
+void* CTrafficMonitorApp::GetTaskbarWindowHwnd()
+{
+    return CTrafficMonitorDlg::Instance()->GetTaskbarWindow()->GetSafeHwnd();
 }
 
 const wchar_t* CTrafficMonitorApp::GetStringRes(const wchar_t* key, const wchar_t* section)

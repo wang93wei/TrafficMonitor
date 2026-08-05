@@ -793,6 +793,7 @@
     <ClInclude Include="DllFunctions.h" />
     <ClInclude Include="DrawCommonEx.h" />
     <ClInclude Include="DrawCommonFactory.h" />
+    <ClInclude Include="DrawCommonHelper.h" />
     <ClInclude Include="DrawTextManager.h" />
     <ClInclude Include="Dxgi1Support2.h" />
     <ClInclude Include="FileDialogEx.h" />
@@ -896,6 +897,7 @@
     <ClCompile Include="DllFunctions.cpp" />
     <ClCompile Include="DrawCommonEx.cpp" />
     <ClCompile Include="DrawCommonFactory.cpp" />
+    <ClCompile Include="DrawCommonHelper.cpp" />
     <ClCompile Include="DrawTextManager.cpp" />
     <ClCompile Include="Dxgi1Support2.cpp" />
     <ClCompile Include="FileDialogEx.cpp" />
@@ -904,6 +906,7 @@
     <ClCompile Include="HistoryTrafficFile.cpp" />
     <ClCompile Include="HistoryTrafficListDlg.cpp" />
     <ClCompile Include="HResultException.cpp" />
+    <ClCompile Include="IDrawCommon.cpp" />
     <ClCompile Include="Image2DEffect.cpp" />
     <ClCompile Include="LinkStatic.cpp" />
     <ClCompile Include="ColorStatic.cpp" />
