@@ -28,6 +28,15 @@ This repo is an independently maintained fork of `zhongyang219/TrafficMonitor`. 
 - `.github/workflows/` — release CI for Lite builds.
 - `UpdateLog/`, `README*.md`, `Help*.md` — user-facing docs and changelogs.
 
+## Spec-Driven Workflow (Trellis)
+
+This repo uses a Trellis spec/task workflow. Before non-trivial edits, check for context here:
+
+- `.trellis/spec/cpp-mfc/` — authoritative per-topic specs that go deeper than this file: `build-config.md`, `coding-conventions.md`, `directory-structure.md`, `monitoring-threading.md`, `hardware-metrics.md`, `drawing-taskbar.md`, `plugins.md`, `settings-strings.md`, `quality-testing.md`. Read the relevant spec before changing sensitive areas (monitoring thread, hardware/PDH/DXGI, taskbar drawing, plugins, settings).
+- `.trellis/spec/guides/` — thinking guides (`code-reuse-thinking-guide.md`, `cross-layer-thinking-guide.md`).
+- `.trellis/tasks/` — current task files; `.trellis/tasks/archive/` — completed. `.trellis/spec/index.md` and `spec/cpp-mfc/index.md` are the entry points.
+- Skills `trellis-before-dev`, `trellis-check`, `trellis-update-spec`, etc. (under `.agents/skills/`) and the `/trellis` command drive the workflow. When a change touches a spec'd area, update the corresponding `.trellis/spec/` doc alongside the code.
+
 ## Development Commands
 
 Run from a VS 2022 Developer Command Prompt unless noted.
