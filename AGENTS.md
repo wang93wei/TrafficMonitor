@@ -104,3 +104,25 @@ gpu_memory_selection_test.exe
 - Extend `tests/gpu_memory_selection_test.cpp` for `GpuMemorySelection::SelectPreferredAdapterMemoryLimit` edge cases: discrete preference, integrated fallback, unreadable/software adapters, PDH limit priority, unknown/all-unreadable fail-closed.
 - `_DEBUG` app startup calls `CTest::Test()` from `TrafficMonitor/Test.cpp`; this is ad hoc/debug-only and not a substitute for regression tests.
 - For UI/taskbar/plugin/hardware changes, build the narrowest relevant config and perform manual smoke checks on Windows. Cover taskbar window open/reopen, DPI/display changes, language strings, plugin loading, and hardware unavailable/error paths.
+
+<!-- TRELLIS:START -->
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+
+- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.trellis/workspace/` — per-developer journals and session traces
+- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+
+If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+
+If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
+- `.agents/skills/` — reusable Trellis skills
+- `.codex/agents/` — optional custom subagents
+
+Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+
+<!-- TRELLIS:END -->
