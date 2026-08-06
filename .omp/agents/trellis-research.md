@@ -18,7 +18,7 @@ directory survive compaction and handoff.
 
 ## Core Responsibilities
 
-1. Resolve the active task with `python3 ./.trellis/scripts/task.py current --source`.
+1. Resolve the active task with `python ./.trellis/scripts/task.py current --source`.
 2. Create `<task-dir>/research/` when it does not exist.
 3. Search internal code, specs, and relevant external documentation.
 4. Write each distinct topic to `<task-dir>/research/<topic-slug>.md`.

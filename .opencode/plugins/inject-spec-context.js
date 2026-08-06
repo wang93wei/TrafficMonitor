@@ -12,7 +12,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { debugLog } from "../lib/trellis-context.js";
 
-const PYTHON_CMD = process.platform === "win32" ? "python" : "python3";
+const PYTHON_CMD = process.platform === "win32" ? "python" : "python";
 
 function runSpecHook(directory, payload) {
   const hookPath = join(

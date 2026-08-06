@@ -295,7 +295,7 @@ def assemble_payload(
     _all_index_lines = [_index_line(m) for m in matches]
     _summary_upper = (
         f"- (+{len(matches)} more governing specs over budget — run "
-        f"python3 ./.trellis/scripts/get_context.py --mode spec "
+        f"python ./.trellis/scripts/get_context.py --mode spec "
         f"--file {edited_rel} to list them)"
     )
     _summary_reserve = len("\n\n" + _index_block([_summary_upper]))
@@ -409,7 +409,7 @@ def assemble_payload(
                 noun = "spec" if dropped == 1 else "specs"
                 summary = (
                     f"- (+{dropped} more governing {noun} over budget — run "
-                    f"python3 ./.trellis/scripts/get_context.py --mode spec "
+                    f"python ./.trellis/scripts/get_context.py --mode spec "
                     f"--file {edited_rel} to list them)"
                 )
                 if fits(_index_block([*chosen, summary])):

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -X utf8 .codex/hooks/inject-spec-context.py",
+            "command": "python -X utf8 .codex/hooks/inject-spec-context.py",
             "timeout": 15
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -X utf8 .codex/hooks/inject-workflow-state.py",
+            "command": "python -X utf8 .codex/hooks/inject-workflow-state.py",
             "timeout": 15
           }
         ]
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -X utf8 .codex/hooks/inject-subagent-context.py",
+            "command": "python -X utf8 .codex/hooks/inject-subagent-context.py",
             "timeout": 15
           }
         ]
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -X utf8 .codex/hooks/inject-spec-context.py",
+            "command": "python -X utf8 .codex/hooks/inject-spec-context.py",
             "timeout": 15,
             "additionalContextLimit": 0
           }

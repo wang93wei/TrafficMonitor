@@ -13,7 +13,7 @@ import { createHash } from "crypto"
 import { Buffer, isUtf8 } from "buffer"
 import process from "process"
 
-const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
+const PYTHON_CMD = platform() === "win32" ? "python" : "python"
 // Debug logging
 const DEBUG_LOG = "/tmp/trellis-plugin-debug.log"
 
@@ -330,14 +330,18 @@ export class TrellisContext {
     return existsSync(join(this.directory, ".trellis"))
   }
 
+  // OpenCode exports no session identity into the environment: no OPENCODE_*
+  // name in the 1.17.18 binary or the 1.18.13 source carries one. The plugin
+  // hook input is the only source, and the `export TRELLIS_CONTEXT_ID=` prefix
+  // this plugin adds to Bash commands is the only way that identity reaches a
+  // child process. TRELLIS_CONTEXT_ID is honored here so a nested Trellis run
+  // inherits its parent's key; do not add platform-native env names next to it
+  // without evidence a vendor sets them.
   getContextKey(platformInput = null) {
     const override = stringValue(process.env.TRELLIS_CONTEXT_ID)
     if (override) {
       return sanitizeKey(override) || hashValue(override)
     }
-
-    const runID = stringValue(process.env.OPENCODE_RUN_ID)
-    if (runID) return buildContextKey("opencode", "session", runID)
 
     const input = platformInput && typeof platformInput === "object" ? platformInput : null
     if (!input) return null
