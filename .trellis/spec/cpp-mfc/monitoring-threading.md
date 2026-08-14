@@ -28,6 +28,7 @@ TrafficMonitor/stdafx.h:71   WM_MONITOR_INFO_UPDATED   (WM_USER+1007)
 TrafficMonitor/stdafx.h:72   WM_REOPEN_TASKBAR_WND     (WM_USER+1008)
 TrafficMonitor/stdafx.h:73   WM_SETTINGS_APPLIED       (WM_USER+1009)
 TrafficMonitor/stdafx.h:74   WM_HARDWARE_MONITOR_ERROR (WM_USER+1010)
+TrafficMonitor/stdafx.h:75   WM_REINIT_CONNECTION      (WM_USER+1011)
 TrafficMonitor/stdafx.h:84   MAIN_TIMER      1234
 TrafficMonitor/stdafx.h:86   TASKBAR_TIMER   1236
 TrafficMonitor/stdafx.h:88   MONITOR_TIMER   1238
@@ -52,6 +53,36 @@ Reference:
 - `WM_HARDWARE_MONITOR_ERROR` (`stdafx.h:74`) — posted from the background thread
   to the UI; `wParam=0` means a normal error popup, `wParam=1` means an
   auto-disable notice.
+- `WM_REINIT_CONNECTION` (`stdafx.h:75`) — posted from the monitoring worker when
+  it detects adapter changes; the UI handler runs `IniConnection()`/`AutoSelect()`
+  (`wParam=0`/`1`). These functions free/rebuild `m_pIfTable`, mutate
+  `m_connections` and menus, so they must never be called directly from the
+  worker thread.
+
+## Rule: shared state must not be mutated from the worker thread
+
+The worker acquires data and posts; it must not mutate containers, settings
+strings, menus, or shared pointers that the UI thread reads:
+
+- `m_pIfTable` / `m_connections` are guarded by `CTrafficMonitorDlg::m_iftable_critical`
+  (`TrafficMonitorDlg.h`). Every cross-thread access — the worker's `GetIfTable`
+  refresh and `GetConnectIfTable()` reads, the UI's `IniConnection()` rebuild —
+  holds this lock (CRITICAL_SECTION is recursive; nesting is fine). Dialogs that
+  outlive a re-init (e.g. `CNetworkInfoDlg`) receive a snapshot copy, never
+  references/pointers into the shared table.
+- Cross-thread settings strings (`m_cfg_data.m_connection_name`,
+  `m_general_data.hard_disk_name`, `m_general_data.cpu_core_name`) are guarded by
+  `m_settings_str_critical`. The worker only takes locked snapshots; when it
+  needs to change a name (hardware fallback), it stores it via
+  `SetPendingHardDiskName`/`SetPendingCpuCoreName` and the UI applies it in
+  `OnMonitorInfoUpdated` → `ApplyPendingHwNames()`.
+- `theApp.m_pMonitor` must be null-checked **inside** `m_minitor_lib_critical`
+  (see `AcquireHardwareMonitorInfo`); `ApplySettings()` can `reset()` it under
+  the same lock. Lock order: never hold `m_minitor_lib_critical` while acquiring
+  `m_settings_str_critical`.
+- Background helper threads (hardware-monitor init, update check) must release
+  `m_minitor_lib_critical` before showing any `AfxMessageBox`, otherwise the
+  monitoring worker stalls and exit-timeout teardown becomes a use-after-free.
 
 ## Global state is intentional
 
