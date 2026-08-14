@@ -39,7 +39,17 @@ This repo uses a Trellis spec/task workflow. Before non-trivial edits, check for
 
 ## Development Commands
 
-Run from a VS 2022 Developer Command Prompt unless noted.
+**Do not build locally.** This dev machine has no Visual Studio/MSBuild installed and no spare C-drive space. All compile verification goes through GitHub Actions:
+
+```bash
+git push origin <branch>
+gh workflow run main.yml --ref <branch> --repo wang93wei/TrafficMonitor
+gh run watch --repo wang93wei/TrafficMonitor
+```
+
+The `--repo wang93wei/TrafficMonitor` flag is mandatory: the repo also has an `upstream` remote (zhongyang219/TrafficMonitor), and gh otherwise resolves to upstream and fails with HTTP 403. `main.yml` is triggered by `v*` tags or `workflow_dispatch`, runs on `windows-2022`, and builds Lite configs only. To verify full-version (temperature / C++/CLI) code paths, temporarily add a branch-only job running `msbuild TrafficMonitor.sln -p:configuration=release -p:platform=x64` (the `windows-2022` runner is proven able to build the full solution), then remove the job before merging.
+
+Reference build commands (used verbatim by CI, run from a VS 2022 Developer Command Prompt when one exists):
 
 ```bat
 :: CI-equivalent Lite release builds
@@ -68,7 +78,7 @@ Notes:
 - Respect compile guards: `WITHOUT_TEMPERATURE`, `COMPILE_FOR_WINXP`, `DISABLE_WINDOWS_WEB_EXPERIENCE_DETECTOR`, `_DEBUG`, `_M_ARM64EC`, `_M_X64`.
 - Do not introduce a second settings, plugin, display-item, or drawing abstraction beside `CSettingsHelper`/`CIniHelper`, `CPluginManager`, `CommonDisplayItem`, and `IDrawCommon`.
 - User-visible strings should go through `CCommon::LoadText`/`CStrTable` and `TrafficMonitor/language/*.ini`; resource IDs belong in `TrafficMonitor/resource.h`.
-- Worker-thread code must not show modal UI directly. Existing hardware-monitor fixes store messages and `PostMessage` UI handlers; preserve that pattern to avoid deadlocks/use-after-free.
+- Worker-thread code must not show modal UI directly. Existing hardware-monitor fixes store messages and `PostMessage` UI handlers; preserve that pattern to avoid deadlocks/use-after-free. Connection re-init follows the same rule: the worker posts `WM_REINIT_CONNECTION` (`stdafx.h`; wParam 0 = `IniConnection`, 1 = auto-select) instead of touching `m_pIfTable` itself, and interface-table reads/writes hold `m_iftable_critical`. See `.trellis/spec/cpp-mfc/monitoring-threading.md` for the full locking rules.
 - Metric helpers usually return `bool` plus sentinel values (`-1` unavailable) and clamp percentages to `[0, 100]`. Fail closed for uncertain hardware data; do not display misleading totals.
 - Resource ownership is mixed legacy/new code: raw Win32/MFC handles, `malloc/free`, `new/delete`, plus `ComPtr`, `shared_ptr`, locks. Preserve non-copyable resource wrappers such as `CPdhQuery` and `CSkinFile`.
 - Plugin item values are queried frequently. Follow `include/PluginInterface.h`: collect data in `ITMPlugin::DataRequired()`, then return cached text from `IPluginItem::GetItemValueText()`.
@@ -89,9 +99,11 @@ Notes:
 - `.github/workflows/main.yml` — release CI pinned to `windows-2022`.
 - `tests/gpu_memory_selection_test.cpp` — standalone regression test for GPU memory selection.
 - `version_utf8.info` — readable release/update metadata; prefer it over legacy `version.info` when editing UTF-8 content.
+- `CLAUDE.md` — symlink to this file (edits propagate automatically). `IFLOW.md` is a separate Chinese-language project-context doc.
 
 ## Runtime/Tooling Preferences
 
+- Remotes: `origin` = `wang93wei/TrafficMonitor` (this fork; CI and PRs go here), `upstream` = `zhongyang219/TrafficMonitor` (original project, fetch-only).
 - Required toolchain: Visual Studio 2022, MSVC v143, MFC, Windows SDK 10.0, Unicode, C++20.
 - CI intentionally uses `windows-2022`; comments say newer `windows-latest` images lacked MFC/v143 for this project.
 - Supported platforms: x86 (`Win32` in project files), x64, ARM64EC.
@@ -103,7 +115,7 @@ Notes:
 ## Testing & QA
 
 - There is no integrated test project or CI test step. CI only builds Lite release artifacts.
-- Standalone pure test:
+- Standalone pure test (needs a local VS install, which this machine does not have; prefer a CI runner or another machine):
 
 ```bat
 cl /EHsc /std:c++20 /I. tests\gpu_memory_selection_test.cpp
@@ -112,7 +124,7 @@ gpu_memory_selection_test.exe
 
 - Extend `tests/gpu_memory_selection_test.cpp` for `GpuMemorySelection::SelectPreferredAdapterMemoryLimit` edge cases: discrete preference, integrated fallback, unreadable/software adapters, PDH limit priority, unknown/all-unreadable fail-closed.
 - `_DEBUG` app startup calls `CTest::Test()` from `TrafficMonitor/Test.cpp`; this is ad hoc/debug-only and not a substitute for regression tests.
-- For UI/taskbar/plugin/hardware changes, build the narrowest relevant config and perform manual smoke checks on Windows. Cover taskbar window open/reopen, DPI/display changes, language strings, plugin loading, and hardware unavailable/error paths.
+- For UI/taskbar/plugin/hardware changes, verify compilation through GitHub Actions (see Development Commands), then perform manual smoke checks on Windows: taskbar window open/reopen, DPI/display changes, language strings, plugin loading, and hardware unavailable/error paths.
 
 <!-- TRELLIS:START -->
 # Trellis Instructions
