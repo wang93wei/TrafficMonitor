@@ -111,3 +111,16 @@ jobs:
       with:
         name: arm64EC_${{ steps.current-time.outputs.formattedTime }}_pdb
         path: Bin/ARM64EC/Release (lite)/*.pdb
+
+  # 临时验证 job（仅此分支）：完整版构建，覆盖 Lite 版被 WITHOUT_TEMPERATURE 排除的温度监控代码路径。
+  # 仅验证编译，不上传产物；合入 master 前会移除。
+  full_x64_build:
+    runs-on: windows-2022
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v3
+
+    - name: Run msbuild (full solution)
+      run: msbuild TrafficMonitor.sln -p:configuration=release -p:platform=x64 -p:platformToolset=v143
