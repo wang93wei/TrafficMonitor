@@ -11,8 +11,8 @@
 
 IMPLEMENT_DYNAMIC(CNetworkInfoDlg, CBaseDialog)
 
-CNetworkInfoDlg::CNetworkInfoDlg(vector<NetWorkConection>& adapters, MIB_IFROW* pIfRow, int connection_selected, CWnd* pParent /*=NULL*/)
-    : CBaseDialog(IDD_NETWORK_INFO_DIALOG, pParent), m_connections(adapters), m_pIfRow(pIfRow), m_connection_selected(connection_selected)
+CNetworkInfoDlg::CNetworkInfoDlg(vector<NetWorkConection> adapters, vector<MIB_IFROW> if_rows, int connection_selected, CWnd* pParent /*=NULL*/)
+    : CBaseDialog(IDD_NETWORK_INFO_DIALOG, pParent), m_connections(std::move(adapters)), m_if_rows(std::move(if_rows)), m_connection_selected(connection_selected)
 {
     m_current_connection = connection_selected;
 }
@@ -150,8 +150,8 @@ MIB_IFROW& CNetworkInfoDlg::GetConnectIfTable(int connection_index)
     if (connection_index >= 0 && connection_index < static_cast<int>(m_connections.size()))
     {
         int index = m_connections[connection_index].index;
-        if (m_pIfRow != nullptr)
-            return m_pIfRow[index];
+        if (index >= 0 && index < static_cast<int>(m_if_rows.size()))
+            return m_if_rows[index];
     }
     return nouse;
 }

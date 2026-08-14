@@ -50,20 +50,35 @@ void CHistoryTrafficFile::UpdateCache() const
 	m_cache_dirty = false; // 标记缓存已更新
 }
 
+void CHistoryTrafficFile::WriteFileHeader(ofstream& file) const
+{
+	// 第一行：总记录数（今天的记录 + 历史记录）
+	char buff[64];
+	size_t total_size = 1 + m_history_traffics.size();
+	sprintf_s(buff, "lines: \"%u\"", static_cast<unsigned int>(total_size));
+	file << buff << "\n";
+}
+
+bool CHistoryTrafficFile::ReplaceWithTmpFile(const wstring& tmp_path) const
+{
+	// 原子替换：MoveFileExW 带 REPLACE_EXISTING 在同卷下是原子的（NTFS rename），
+	// 与 CIniHelper::Save 的原子写入方式保持一致
+	return ::MoveFileExW(tmp_path.c_str(), m_file_path.c_str(),
+		MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+}
+
 void CHistoryTrafficFile::Save() const
 {
-	ofstream file{ m_file_path };
+	// 原子写入：先写临时文件，全部成功后再替换原文件。
+	// 直接覆盖写时若进程崩溃/断电/磁盘满，会留下半截损坏文件，导致历史数据全部丢失
+	wstring tmp_path{ m_file_path + L".tmp" };
+	ofstream file{ tmp_path };
 	if (!file.is_open())
 	{
 		return;
 	}
 
-	char buff[64];
-	
-	// 第一行：总记录数（今天的记录 + 历史记录）
-	size_t total_size = 1 + m_history_traffics.size();
-	sprintf_s(buff, "lines: \"%u\"", static_cast<unsigned int>(total_size));
-	file << buff << "\n";
+	WriteFileHeader(file);
 
 	// 第二行：今天的记录
 	WriteTrafficRecord(file, m_today_traffic);
@@ -74,7 +89,15 @@ void CHistoryTrafficFile::Save() const
 		WriteTrafficRecord(file, history_traffic);
 	}
 
+	file.flush();
+	bool write_ok = !file.bad();
 	file.close();
+
+	if (!write_ok || !ReplaceWithTmpFile(tmp_path))
+	{
+		// 写入或替换失败，删除可能残留的临时文件，保持原文件不变
+		::DeleteFileW(tmp_path.c_str());
+	}
 }
 
 bool CHistoryTrafficFile::IsTodayRecord() const
@@ -110,33 +133,34 @@ void CHistoryTrafficFile::SaveTodayOnly() const
 	// 读取文件剩余行（第3行及之后），用于增量更新
 	vector<string> remaining_lines;
 	ifstream in_file{ m_file_path };
-	if (in_file.is_open())
+	if (!in_file.is_open())
 	{
-		string line;
-		int line_num = 0;
-		while (std::getline(in_file, line))
-		{
-			line_num++;
-			if (line_num > 2) // 跳过前两行
-			{
-				remaining_lines.push_back(line);
-			}
-		}
-		in_file.close();
+		// fail closed：文件存在却读取失败（共享冲突、杀毒扫描、备份软件占用等）时
+		// 直接放弃本次保存，否则按“剩余行为空”重写文件会把全部历史记录清空
+		return;
 	}
+	string line;
+	int line_num = 0;
+	while (std::getline(in_file, line))
+	{
+		line_num++;
+		if (line_num > 2) // 跳过前两行
+		{
+			remaining_lines.push_back(line);
+		}
+	}
+	in_file.close();
 
-	// 写入更新后的文件
-	ofstream out_file{ m_file_path };
+	// 原子写入：先写临时文件，全部成功后再替换原文件，避免崩溃/断电/磁盘满时损坏历史数据文件
+	wstring tmp_path{ m_file_path + L".tmp" };
+	ofstream out_file{ tmp_path };
 	if (!out_file.is_open())
 	{
 		return;
 	}
 
 	// 第一行：lines计数（今天的记录 + 历史记录）
-	size_t total_size = 1 + m_history_traffics.size();
-	char buff[64];
-	sprintf_s(buff, "lines: \"%u\"", static_cast<unsigned int>(total_size));
-	out_file << buff << "\n";
+	WriteFileHeader(out_file);
 
 	// 第二行：今天的记录
 	WriteTrafficRecord(out_file, m_today_traffic);
@@ -147,7 +171,15 @@ void CHistoryTrafficFile::SaveTodayOnly() const
 		out_file << line << "\n";
 	}
 
+	out_file.flush();
+	bool write_ok = !out_file.bad();
 	out_file.close();
+
+	if (!write_ok || !ReplaceWithTmpFile(tmp_path))
+	{
+		// 写入或替换失败，删除可能残留的临时文件，保持原文件不变
+		::DeleteFileW(tmp_path.c_str());
+	}
 }
 
 void CHistoryTrafficFile::Load()

@@ -39,7 +39,11 @@ CTrafficMonitorDlg::CTrafficMonitorDlg(CWnd* pParent /*=NULL*/)
 
 CTrafficMonitorDlg::~CTrafficMonitorDlg()
 {
-    free(m_pIfTable);
+    {
+        CSingleLock sync(&m_iftable_critical, TRUE);
+        free(m_pIfTable);
+        m_pIfTable = nullptr;
+    }
 
     if (m_tBarDlg != nullptr)
     {
@@ -122,6 +126,7 @@ BEGIN_MESSAGE_MAP(CTrafficMonitorDlg, CDialog)
     ON_MESSAGE(WM_DPICHANGED, &CTrafficMonitorDlg::OnDpichanged)
     ON_MESSAGE(WM_TASKBAR_WND_CLOSED, &CTrafficMonitorDlg::OnTaskbarWndClosed)
     ON_MESSAGE(WM_MONITOR_INFO_UPDATED, &CTrafficMonitorDlg::OnMonitorInfoUpdated)
+    ON_MESSAGE(WM_REINIT_CONNECTION, &CTrafficMonitorDlg::OnReinitConnection)
     ON_MESSAGE(WM_HARDWARE_MONITOR_ERROR, &CTrafficMonitorDlg::OnHardwareMonitorError)
     ON_MESSAGE(WM_DISPLAYCHANGE, &CTrafficMonitorDlg::OnDisplaychange)
     ON_WM_EXITSIZEMOVE()
@@ -396,41 +401,74 @@ void CTrafficMonitorDlg::AutoSelect()
             }
         }
     }
-    theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
+    //m_connection_name 会被工作线程读取（DoMonitorAcquisition 中的连接名称匹配检查），跨线程写入需加锁
+    {
+        CSingleLock sync(&m_settings_str_critical, TRUE);
+        theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
+    }
     m_connection_change_flag = true;
 }
 
 void CTrafficMonitorDlg::IniConnection()
 {
-    //为m_pIfTable开辟所需大小的内存
-    free(m_pIfTable);
-    m_dwSize = sizeof(MIB_IFTABLE);
-    m_pIfTable = (MIB_IFTABLE*)malloc(m_dwSize);
-    int rtn;
-    rtn = GetIfTable(m_pIfTable, &m_dwSize, FALSE);
-    if (rtn == ERROR_INSUFFICIENT_BUFFER)	//如果函数返回值为ERROR_INSUFFICIENT_BUFFER，说明m_pIfTable的大小不够
+    // 本函数释放重建 m_pIfTable、修改 m_connections，只允许在 UI 线程调用
+    //（工作线程通过 WM_REINIT_CONNECTION 消息请求执行），表数据读写期间持有 m_iftable_critical
     {
+        CSingleLock iftable_sync(&m_iftable_critical, TRUE);
+        //为m_pIfTable开辟所需大小的内存
         free(m_pIfTable);
-        m_pIfTable = (MIB_IFTABLE*)malloc(m_dwSize);	//用新的大小重新开辟一块内存
-    }
-    GetIfTable(m_pIfTable, &m_dwSize, FALSE);
-
-    //获取当前所有的连接，并保存到m_connections容器中
-    if (!theApp.m_general_data.show_all_interface)
-    {
-        m_connections.clear();
-        vector<NetWorkConection> connections;
-        CAdapterCommon::GetAdapterInfo(connections);
-        for (const auto& item : connections)
+        m_dwSize = sizeof(MIB_IFTABLE);
+        m_pIfTable = (MIB_IFTABLE*)malloc(m_dwSize);
+        int rtn;
+        rtn = GetIfTable(m_pIfTable, &m_dwSize, FALSE);
+        if (rtn == ERROR_INSUFFICIENT_BUFFER)	//如果函数返回值为ERROR_INSUFFICIENT_BUFFER，说明m_pIfTable的大小不够
         {
-            if (!theApp.m_general_data.connections_hide.Contains(CCommon::StrToUnicode(item.description.c_str())))
-                m_connections.push_back(item);
+            free(m_pIfTable);
+            m_pIfTable = (MIB_IFTABLE*)malloc(m_dwSize);	//用新的大小重新开辟一块内存
         }
-        CAdapterCommon::GetIfTableInfo(m_connections, m_pIfTable);
-    }
-    else
-    {
-        CAdapterCommon::GetAllIfTableInfo(m_connections, m_pIfTable);
+        GetIfTable(m_pIfTable, &m_dwSize, FALSE);
+
+        //获取当前所有的连接，并保存到m_connections容器中
+        if (!theApp.m_general_data.show_all_interface)
+        {
+            m_connections.clear();
+            vector<NetWorkConection> connections;
+            CAdapterCommon::GetAdapterInfo(connections);
+            for (const auto& item : connections)
+            {
+                if (!theApp.m_general_data.connections_hide.Contains(CCommon::StrToUnicode(item.description.c_str())))
+                    m_connections.push_back(item);
+            }
+            CAdapterCommon::GetIfTableInfo(m_connections, m_pIfTable);
+        }
+        else
+        {
+            CAdapterCommon::GetAllIfTableInfo(m_connections, m_pIfTable);
+        }
+
+        //写入调试日志
+        if (theApp.m_debug_log)
+        {
+            CString log_str;
+            log_str += _T("正在初始化网络连接...\n");
+            log_str += _T("连接列表：\n");
+            for (size_t i{}; i < m_connections.size(); i++)
+            {
+                log_str += m_connections[i].description.c_str();
+                log_str += _T(", ");
+                log_str += CCommon::IntToString(m_connections[i].index);
+                log_str += _T("\n");
+            }
+            log_str += _T("IfTable:\n");
+            for (size_t i{}; i < m_pIfTable->dwNumEntries; i++)
+            {
+                log_str += CCommon::IntToString(i);
+                log_str += _T(" ");
+                log_str += (const char*)m_pIfTable->table[i].bDescr;
+                log_str += _T("\n");
+            }
+            CCommon::WriteLog(log_str, (theApp.m_config_dir + L".\\connections.log").c_str());
+        }
     }
 
     //如果在设置了“显示所有网络连接”时设置了“选择全部”，则改为“自动选择”
@@ -438,30 +476,6 @@ void CTrafficMonitorDlg::IniConnection()
     {
         theApp.m_cfg_data.m_select_all = false;
         theApp.m_cfg_data.m_auto_select = true;
-    }
-
-    //写入调试日志
-    if (theApp.m_debug_log)
-    {
-        CString log_str;
-        log_str += _T("正在初始化网络连接...\n");
-        log_str += _T("连接列表：\n");
-        for (size_t i{}; i < m_connections.size(); i++)
-        {
-            log_str += m_connections[i].description.c_str();
-            log_str += _T(", ");
-            log_str += CCommon::IntToString(m_connections[i].index);
-            log_str += _T("\n");
-        }
-        log_str += _T("IfTable:\n");
-        for (size_t i{}; i < m_pIfTable->dwNumEntries; i++)
-        {
-            log_str += CCommon::IntToString(i);
-            log_str += _T(" ");
-            log_str += (const char*)m_pIfTable->table[i].bDescr;
-            log_str += _T("\n");
-        }
-        CCommon::WriteLog(log_str, (theApp.m_config_dir + L".\\connections.log").c_str());
     }
 
     //if (m_connection_selected < 0 || m_connection_selected >= m_connections.size() || m_auto_select)
@@ -490,7 +504,11 @@ void CTrafficMonitorDlg::IniConnection()
     }
     if (m_connection_selected < 0 || m_connection_selected >= m_connections.size())
         m_connection_selected = 0;
-    theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
+    //m_connection_name 会被工作线程读取，跨线程写入需加锁（见 m_settings_str_critical 说明）
+    {
+        CSingleLock sync(&m_settings_str_critical, TRUE);
+        theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
+    }
 
     //根据已获取到的连接在菜单中添加相应项目
     IniConnectionMenu(theApp.m_main_menu.GetSubMenu(0)->GetSubMenu(0));      //向“选择网络连接”子菜单项添加项目
@@ -504,6 +522,9 @@ void CTrafficMonitorDlg::IniConnection()
 
 MIB_IFROW CTrafficMonitorDlg::GetConnectIfTable(int connection_index)
 {
+    //本函数会被工作线程和 UI 线程同时调用，读取期间持有 m_iftable_critical
+    //（CRITICAL_SECTION 可重入，嵌套加锁安全）
+    CSingleLock sync(&m_iftable_critical, TRUE);
     if (connection_index >= 0 && connection_index < static_cast<int>(m_connections.size()))
     {
         int index = m_connections[connection_index].index;
@@ -519,6 +540,39 @@ NetWorkConection CTrafficMonitorDlg::GetConnection(int connection_index)
         return m_connections[connection_index];
     else
         return NetWorkConection();
+}
+
+void CTrafficMonitorDlg::SetPendingHardDiskName(const wstring& name)
+{
+    CSingleLock sync(&m_settings_str_critical, TRUE);
+    m_pending_hard_disk_name = name;
+    m_pending_hard_disk_name_valid = true;
+}
+
+void CTrafficMonitorDlg::SetPendingCpuCoreName(const wstring& name)
+{
+    CSingleLock sync(&m_settings_str_critical, TRUE);
+    m_pending_cpu_core_name = name;
+    m_pending_cpu_core_name_valid = true;
+}
+
+void CTrafficMonitorDlg::ApplyPendingHwNames()
+{
+    wstring hard_disk_name, cpu_core_name;
+    bool hard_disk_valid, cpu_core_valid;
+    {
+        CSingleLock sync(&m_settings_str_critical, TRUE);
+        hard_disk_name = std::move(m_pending_hard_disk_name);
+        hard_disk_valid = m_pending_hard_disk_name_valid;
+        m_pending_hard_disk_name_valid = false;
+        cpu_core_name = std::move(m_pending_cpu_core_name);
+        cpu_core_valid = m_pending_cpu_core_name_valid;
+        m_pending_cpu_core_name_valid = false;
+    }
+    if (hard_disk_valid)
+        theApp.m_general_data.hard_disk_name = hard_disk_name;
+    if (cpu_core_valid)
+        theApp.m_general_data.cpu_core_name = cpu_core_name;
 }
 
 void CTrafficMonitorDlg::IniConnectionMenu(CMenu* pMenu)
@@ -802,7 +856,12 @@ void CTrafficMonitorDlg::ApplySettings(COptionsDlg& optionsDlg)
 
     theApp.m_main_wnd_data = optionsDlg.m_tab1_dlg.m_data;
     theApp.m_taskbar_data = optionsDlg.m_tab2_dlg.m_data;
-    theApp.m_general_data = optionsDlg.m_tab3_dlg.m_data;
+    //整结构赋值包含 hard_disk_name/cpu_core_name 等被工作线程读取的 string 成员，
+    //须与工作线程的快照读取互斥（见 m_settings_str_critical 说明）
+    {
+        CSingleLock sync(&m_settings_str_critical, TRUE);
+        theApp.m_general_data = optionsDlg.m_tab3_dlg.m_data;
+    }
     theApp.SendSettingsToPlugin();
 
     CGeneralSettingsDlg::CheckTaskbarDisplayItem();
@@ -1215,11 +1274,178 @@ static int GetMonitorTimerCount(int second)
 }
 
 
+#ifndef WITHOUT_TEMPERATURE
+//获取温度等硬件监控信息（仅工作线程调用）
+void CTrafficMonitorDlg::AcquireHardwareMonitorInfo(bool& cpu_freq_acquired, bool& gpu_usage_acquired)
+{
+    //先在 m_minitor_lib_critical 之外快照跨线程共享的设置字符串，固定加锁顺序，避免与 UI 线程死锁
+    wstring hard_disk_name, cpu_core_name;
+    {
+        CSingleLock str_sync(&m_settings_str_critical, TRUE);
+        hard_disk_name = theApp.m_general_data.hard_disk_name;
+        cpu_core_name = theApp.m_general_data.cpu_core_name;
+    }
+
+    CSingleLock sync(&theApp.m_minitor_lib_critical, TRUE);
+    //m_pMonitor 的判空必须在临界区内：UI 线程的 ApplySettings() 会在同一临界区内 reset()，
+    //锁外判空可能在检查之后、加锁之前被置空，而下方 GpuTemperature() 等调用没有 SEH 保护会直接崩溃
+    if (theApp.m_pMonitor == nullptr)
+        return;
+
+    CString error_info = CCommon::LoadText(IDS_HARDWARE_INFO_ACQUIRE_FAILED_ERROR);
+    bool hardware_info_error = false;
+
+    auto getHardwareInfo = [&]() {
+        __try
+        {
+            theApp.m_pMonitor->GetHardwareInfo();
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            hardware_info_error = true;
+        }
+    };
+
+    getHardwareInfo();
+    auto monitor_error_message{ OpenHardwareMonitorApi::GetErrorMessage() };
+    if (!monitor_error_message.empty())
+    {
+        hardware_info_error = true;
+    }
+
+    if (hardware_info_error)
+    {
+        m_hardware_monitor_error_cnt++;
+        // 写入日志
+        CString log_info;
+        log_info.Format(_T("Hardware monitor error count: %d/%d"), m_hardware_monitor_error_cnt, MAX_HARDWARE_MONITOR_ERRORS);
+        CCommon::WriteLog(log_info, theApp.m_log_path.c_str());
+
+        if (!monitor_error_message.empty())
+        {
+            CCommon::WriteLog(CString(monitor_error_message.c_str()), theApp.m_log_path.c_str());
+        }
+
+        // 只在第一次错误时弹出提示
+        if (!m_hardware_monitor_error_shown)
+        {
+            CString msg;
+            if (!monitor_error_message.empty())
+            {
+                msg = monitor_error_message.c_str();
+            }
+            else
+            {
+                msg = error_info;
+            }
+            // 不能在工作线程(本函数)直接 AfxMessageBox：MFC 模态框会阻塞工作线程，
+            // 导致 ExitMonitorThread 的等待超时后析构成员引发 use-after-free。
+            // 改为存文本到成员 + PostMessage 通知 UI 线程弹窗。
+            m_pending_hw_error_msg = msg;
+            PostMessage(WM_HARDWARE_MONITOR_ERROR, 0, 0);
+            m_hardware_monitor_error_shown = true;
+        }
+
+        // 连续错误达到阈值后自动禁用硬件监控
+        if (m_hardware_monitor_error_cnt >= MAX_HARDWARE_MONITOR_ERRORS)
+        {
+            m_hardware_monitor_disabled_by_error = true;
+            CString disable_msg = CCommon::LoadText(_T("Hardware monitoring has been automatically disabled due to persistent errors.\n")
+                _T("You can re-enable it in Options after resolving the issue (e.g., updating GPU driver)."));
+            CCommon::WriteLog(disable_msg, theApp.m_log_path.c_str());
+            // 同上，PostMessage 到 UI 线程弹窗（wParam=1 表示自动禁用提示）
+            m_pending_hw_error_msg = disable_msg;
+            PostMessage(WM_HARDWARE_MONITOR_ERROR, 1, 0);
+        }
+    }
+    else
+    {
+        // 成功时重置错误计数器
+        if (m_hardware_monitor_error_cnt > 0)
+        {
+            m_hardware_monitor_error_cnt = 0;
+            m_hardware_monitor_error_shown = false;
+        }
+    }
+
+    // 即使有错误也继续获取数据（可能是部分硬件有问题）
+    //theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
+    theApp.m_gpu_temperature = theApp.m_pMonitor->GpuTemperature();
+    //theApp.m_hdd_temperature = theApp.m_pMonitor->HDDTemperature();
+    theApp.m_main_board_temperature = theApp.m_pMonitor->MainboardTemperature();
+    if (!gpu_usage_acquired)
+        theApp.m_gpu_usage = theApp.m_pMonitor->GpuUsage();
+    if (!cpu_freq_acquired)
+        theApp.m_cpu_freq = theApp.m_pMonitor->CpuFreq();
+    //获取CPU温度
+    if (!theApp.m_pMonitor->AllCpuTemperature().empty())
+    {
+        if (cpu_core_name == CCommon::LoadText(IDS_AVREAGE_TEMPERATURE).GetString())  //如果选择了平均温度
+        {
+            theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
+        }
+        else
+        {
+            auto iter = theApp.m_pMonitor->AllCpuTemperature().find(cpu_core_name);
+            if (iter == theApp.m_pMonitor->AllCpuTemperature().end())
+            {
+                iter = theApp.m_pMonitor->AllCpuTemperature().begin();
+                //工作线程不直接写 theApp 的设置，暂存回退值由 UI 线程应用（见 m_pending_cpu_core_name 说明）
+                cpu_core_name = iter->first;
+                SetPendingCpuCoreName(cpu_core_name);
+            }
+            theApp.m_cpu_temperature = iter->second;
+        }
+    }
+    else
+    {
+        theApp.m_cpu_temperature = -1;
+    }
+    //获取硬盘温度
+    if (!theApp.m_pMonitor->AllHDDTemperature().empty())
+    {
+        auto iter = theApp.m_pMonitor->AllHDDTemperature().find(hard_disk_name);
+        if (iter == theApp.m_pMonitor->AllHDDTemperature().end())
+        {
+            iter = theApp.m_pMonitor->AllHDDTemperature().begin();
+            hard_disk_name = iter->first;
+            SetPendingHardDiskName(hard_disk_name);
+        }
+        theApp.m_hdd_temperature = iter->second;
+    }
+    else
+    {
+        theApp.m_hdd_temperature = -1;
+    }
+    //获取硬盘利用率
+    if (!m_get_disk_usage_by_pdh)
+    {
+        if (!theApp.m_pMonitor->AllHDDUsage().empty())
+        {
+            auto iter = theApp.m_pMonitor->AllHDDUsage().find(hard_disk_name);
+            if (iter == theApp.m_pMonitor->AllHDDUsage().end())
+            {
+                iter = theApp.m_pMonitor->AllHDDUsage().begin();
+                hard_disk_name = iter->first;
+                SetPendingHardDiskName(hard_disk_name);
+            }
+            theApp.m_hdd_usage = iter->second;
+        }
+        else
+        {
+            theApp.m_hdd_usage = -1;
+        }
+    }
+}
+#endif
+
 void CTrafficMonitorDlg::DoMonitorAcquisition()
 {
     //获取网络连接速度
     int rtn{};
-    auto getLfTable = [&]() {
+    // GetIfTable 及异常恢复会写 m_pIfTable，必须与 UI 线程的 IniConnection（释放重建）互斥。
+    // CSingleLock 带析构不能与 __try 同函数（C2712），因此 __try 放在内层 lambda、锁放在外层作用域
+    auto getLfTableSeh = [&]() {
         __try
         {
             rtn = GetIfTable(m_pIfTable, &m_dwSize, FALSE);
@@ -1238,8 +1464,10 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
             GetIfTable(m_pIfTable, &m_dwSize, FALSE);
         }
     };
-
-    getLfTable();
+    {
+        CSingleLock sync(&m_iftable_critical, TRUE);
+        getLfTableSeh();
+    }
 
     if (!theApp.m_cfg_data.m_select_all)        //获取当前选中连接的网速
     {
@@ -1251,6 +1479,8 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     {
         m_in_bytes = 0;
         m_out_bytes = 0;
+        //遍历 m_connections 期间需持锁，防止 UI 线程的 IniConnection 并发清空/重建导致迭代器失效
+        CSingleLock iftable_sync(&m_iftable_critical, TRUE);
         for (size_t i{}; i < m_connections.size(); i++)
         {
             auto table = GetConnectIfTable(i);
@@ -1318,7 +1548,9 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
             m_zero_speed_cnt = 0;
         if (m_zero_speed_cnt >= GetMonitorTimerCount(30))
         {
-            AutoSelect();
+            //工作线程不能直接调用 AutoSelect()（会写 m_connection_selected/m_connection_name 等共享状态），
+            //改为投递消息由 UI 线程执行
+            PostMessage(WM_REINIT_CONNECTION, 1, 0);
             m_zero_speed_cnt = 0;
         }
     }
@@ -1374,7 +1606,9 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
 
     if (rtn == ERROR_INSUFFICIENT_BUFFER)
     {
-        IniConnection();
+        //工作线程不能直接调用 IniConnection()（会释放重建 m_pIfTable/m_connections、修改菜单），
+        //改为投递消息由 UI 线程执行
+        PostMessage(WM_REINIT_CONNECTION, 0, 0);
         CString info = CCommon::LoadText(IDS_INSUFFICIENT_BUFFER);
         info.Replace(_T("<%cnt%>"), CCommon::IntToString(m_restart_cnt));
         CCommon::WriteLog(info, theApp.m_log_path.c_str());
@@ -1383,10 +1617,15 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     if (m_monitor_time_cnt % GetMonitorTimerCount(3) == GetMonitorTimerCount(3) - 1)
     {
         //重新获取当前连接数量
-        static DWORD last_interface_num = -1;
+        //首次检查只记录当前连接数，不触发重新初始化
+        static DWORD last_interface_num = static_cast<DWORD>(-1);
         DWORD interface_num;
         GetNumberOfInterfaces(&interface_num);
-        if (last_interface_num != -1 && interface_num != last_interface_num)    //如果连接数发生变化，则重新初始化连接
+        if (last_interface_num == static_cast<DWORD>(-1))
+        {
+            last_interface_num = interface_num;
+        }
+        else if (interface_num != last_interface_num)    //如果连接数发生变化，则重新初始化连接
         {
             if (theApp.m_debug_log)
             {
@@ -1396,13 +1635,20 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                 info.Replace(_T("<%cnt%>"), CCommon::IntToString(m_restart_cnt + 1));
                 CCommon::WriteLog(info, theApp.m_log_path.c_str());
             }
-            IniConnection();
+            //同上，IniConnection 只能在 UI 线程执行
+            PostMessage(WM_REINIT_CONNECTION, 0, 0);
             last_interface_num = interface_num;
         }
 
         string descr;
         descr = (const char*)GetConnectIfTable(m_connection_selected).bDescr;
-        if (descr != theApp.m_cfg_data.m_connection_name)
+        //m_connection_name 由 UI 线程写入，读取前先加锁拷贝快照
+        string connection_name;
+        {
+            CSingleLock sync(&m_settings_str_critical, TRUE);
+            connection_name = theApp.m_cfg_data.m_connection_name;
+        }
+        if (descr != connection_name)
         {
             //写入额外的调试信息
             if (theApp.m_debug_log)
@@ -1412,11 +1658,12 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                 log_str += _T("IfTable description: ");
                 log_str += descr.c_str();
                 log_str += _T("\r\nm_connection_name: ");
-                log_str += theApp.m_cfg_data.m_connection_name.c_str();
+                log_str += connection_name.c_str();
                 CCommon::WriteLog(log_str, (theApp.m_config_dir + L".\\connections.log").c_str());
             }
 
-            IniConnection();
+            //同上，IniConnection 只能在 UI 线程执行
+            PostMessage(WM_REINIT_CONNECTION, 0, 0);
             CString info = CCommon::LoadText(IDS_CONNECTION_NOT_MATCH);
             info.Replace(_T("<%cnt%>"), CCommon::IntToString(m_restart_cnt));
             CCommon::WriteLog(info, theApp.m_log_path.c_str());
@@ -1468,14 +1715,23 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     //获取硬盘利用率
     if (lite_version /*|| is_arm64ec*/ || !theApp.m_general_data.IsHardwareEnable(HI_HDD))
     {
-        int disk_index = m_disk_usage_helper.FindDiskIndex(theApp.m_general_data.hard_disk_name);
+        //hard_disk_name 由 UI 线程写入（选项设置/回退值应用），读取前先加锁拷贝快照
+        wstring hard_disk_name;
+        {
+            CSingleLock sync(&m_settings_str_critical, TRUE);
+            hard_disk_name = theApp.m_general_data.hard_disk_name;
+        }
+        int disk_index = m_disk_usage_helper.FindDiskIndex(hard_disk_name);
         //没有找到要监控的硬盘时默认使用总体利用率
         if (disk_index < 0)
         {
             disk_index = m_disk_usage_helper.FindDiskIndex(L"_Total");
             if (disk_index >= 0)
             {
-                theApp.m_general_data.hard_disk_name = L"_Total";
+                hard_disk_name = L"_Total";
+                //工作线程不直接写 theApp 的设置（wstring 赋值会释放旧缓冲区，UI 线程可能正在读取），
+                //先暂存，由 UI 线程在 OnMonitorInfoUpdated 中应用
+                SetPendingHardDiskName(hard_disk_name);
             }
             //仍然没有找到使用第1块硬盘
             else
@@ -1484,7 +1740,8 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
                 if (!disk_names.empty())
                 {
                     disk_index = 0;
-                    theApp.m_general_data.hard_disk_name = disk_names.front();
+                    hard_disk_name = disk_names.front().GetString();
+                    SetPendingHardDiskName(hard_disk_name);
                 }
             }
         }
@@ -1504,149 +1761,9 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
 
 #ifndef WITHOUT_TEMPERATURE
     //获取温度
-    if (IsTemperatureNeeded() && theApp.m_pMonitor != nullptr && !m_hardware_monitor_disabled_by_error)
+    if (IsTemperatureNeeded() && !m_hardware_monitor_disabled_by_error)
     {
-        CSingleLock sync(&theApp.m_minitor_lib_critical, TRUE);
-        CString error_info = CCommon::LoadText(IDS_HARDWARE_INFO_ACQUIRE_FAILED_ERROR);
-        bool hardware_info_error = false;
-
-        auto getHardwareInfo = [&]() {
-            __try
-            {
-                theApp.m_pMonitor->GetHardwareInfo();
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                hardware_info_error = true;
-            }
-        };
-
-        getHardwareInfo();
-        auto monitor_error_message{ OpenHardwareMonitorApi::GetErrorMessage() };
-        if (!monitor_error_message.empty())
-        {
-            hardware_info_error = true;
-        }
-
-        if (hardware_info_error)
-        {
-            m_hardware_monitor_error_cnt++;
-            // 写入日志
-            CString log_info;
-            log_info.Format(_T("Hardware monitor error count: %d/%d"), m_hardware_monitor_error_cnt, MAX_HARDWARE_MONITOR_ERRORS);
-            CCommon::WriteLog(log_info, theApp.m_log_path.c_str());
-
-            if (!monitor_error_message.empty())
-            {
-                CCommon::WriteLog(CString(monitor_error_message.c_str()), theApp.m_log_path.c_str());
-            }
-
-            // 只在第一次错误时弹出提示
-            if (!m_hardware_monitor_error_shown)
-            {
-                CString msg;
-                if (!monitor_error_message.empty())
-                {
-                    msg = monitor_error_message.c_str();
-                }
-                else
-                {
-                    msg = error_info;
-                }
-                // 不能在工作线程(本函数)直接 AfxMessageBox：MFC 模态框会阻塞工作线程，
-                // 导致 ExitMonitorThread 的等待超时后析构成员引发 use-after-free。
-                // 改为存文本到成员 + PostMessage 通知 UI 线程弹窗。
-                m_pending_hw_error_msg = msg;
-                PostMessage(WM_HARDWARE_MONITOR_ERROR, 0, 0);
-                m_hardware_monitor_error_shown = true;
-            }
-
-            // 连续错误达到阈值后自动禁用硬件监控
-            if (m_hardware_monitor_error_cnt >= MAX_HARDWARE_MONITOR_ERRORS)
-            {
-                m_hardware_monitor_disabled_by_error = true;
-                CString disable_msg = CCommon::LoadText(_T("Hardware monitoring has been automatically disabled due to persistent errors.\n")
-                    _T("You can re-enable it in Options after resolving the issue (e.g., updating GPU driver)."));
-                CCommon::WriteLog(disable_msg, theApp.m_log_path.c_str());
-                // 同上，PostMessage 到 UI 线程弹窗（wParam=1 表示自动禁用提示）
-                m_pending_hw_error_msg = disable_msg;
-                PostMessage(WM_HARDWARE_MONITOR_ERROR, 1, 0);
-            }
-        }
-        else
-        {
-            // 成功时重置错误计数器
-            if (m_hardware_monitor_error_cnt > 0)
-            {
-                m_hardware_monitor_error_cnt = 0;
-                m_hardware_monitor_error_shown = false;
-            }
-        }
-
-        // 即使有错误也继续获取数据（可能是部分硬件有问题）
-        //theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
-        theApp.m_gpu_temperature = theApp.m_pMonitor->GpuTemperature();
-        //theApp.m_hdd_temperature = theApp.m_pMonitor->HDDTemperature();
-        theApp.m_main_board_temperature = theApp.m_pMonitor->MainboardTemperature();
-        if (!gpu_usage_acquired)
-            theApp.m_gpu_usage = theApp.m_pMonitor->GpuUsage();
-        if (!cpu_freq_acquired)
-            theApp.m_cpu_freq = theApp.m_pMonitor->CpuFreq();
-        //获取CPU温度
-        if (!theApp.m_pMonitor->AllCpuTemperature().empty())
-        {
-            if (theApp.m_general_data.cpu_core_name == CCommon::LoadText(IDS_AVREAGE_TEMPERATURE).GetString())  //如果选择了平均温度
-            {
-                theApp.m_cpu_temperature = theApp.m_pMonitor->CpuTemperature();
-            }
-            else
-            {
-                auto iter = theApp.m_pMonitor->AllCpuTemperature().find(theApp.m_general_data.cpu_core_name);
-                if (iter == theApp.m_pMonitor->AllCpuTemperature().end())
-                {
-                    iter = theApp.m_pMonitor->AllCpuTemperature().begin();
-                    theApp.m_general_data.cpu_core_name = iter->first;
-                }
-                theApp.m_cpu_temperature = iter->second;
-            }
-        }
-        else
-        {
-            theApp.m_cpu_temperature = -1;
-        }
-        //获取硬盘温度
-        if (!theApp.m_pMonitor->AllHDDTemperature().empty())
-        {
-            auto iter = theApp.m_pMonitor->AllHDDTemperature().find(theApp.m_general_data.hard_disk_name);
-            if (iter == theApp.m_pMonitor->AllHDDTemperature().end())
-            {
-                iter = theApp.m_pMonitor->AllHDDTemperature().begin();
-                theApp.m_general_data.hard_disk_name = iter->first;
-            }
-            theApp.m_hdd_temperature = iter->second;
-        }
-        else
-        {
-            theApp.m_hdd_temperature = -1;
-        }
-        //获取硬盘利用率
-        if (!m_get_disk_usage_by_pdh)
-        {
-            if (!theApp.m_pMonitor->AllHDDUsage().empty())
-            {
-                auto iter = theApp.m_pMonitor->AllHDDUsage().find(theApp.m_general_data.hard_disk_name);
-                if (iter == theApp.m_pMonitor->AllHDDUsage().end())
-                {
-                    iter = theApp.m_pMonitor->AllHDDUsage().begin();
-                    theApp.m_general_data.hard_disk_name = iter->first;
-                }
-                theApp.m_hdd_usage = iter->second;
-            }
-            else
-            {
-                theApp.m_hdd_usage = -1;
-            }
-        }
+        AcquireHardwareMonitorInfo(cpu_freq_acquired, gpu_usage_acquired);
     }
 #endif
 
@@ -2232,7 +2349,17 @@ void CTrafficMonitorDlg::OnNetworkInfo()
 {
     // TODO: 在此添加命令处理程序代码
     //弹出“连接详情”对话框
-    CNetworkInfoDlg aDlg(m_connections, m_pIfTable->table, m_connection_selected);
+    //拷贝一份数据传入对话框：对话框模态显示期间，UI 线程仍可能通过 WM_REINIT_CONNECTION
+    //执行 IniConnection（释放重建 m_pIfTable、清空 m_connections），对话框持有引用/裸指针会变成悬空指针
+    vector<NetWorkConection> connections;
+    vector<MIB_IFROW> if_rows;
+    {
+        CSingleLock sync(&m_iftable_critical, TRUE);
+        connections = m_connections;
+        if (m_pIfTable != nullptr && m_pIfTable->dwNumEntries > 0)
+            if_rows.assign(m_pIfTable->table, m_pIfTable->table + m_pIfTable->dwNumEntries);
+    }
+    CNetworkInfoDlg aDlg(connections, if_rows, m_connection_selected);
     ////向CNetworkInfoDlg类传递自启动以来已发送和接收的字节数
     //aDlg.m_in_bytes = m_pIfTable->table[m_connections[m_connection_selected].index].dwInOctets - m_connections[m_connection_selected].in_bytes;
     //aDlg.m_out_bytes = m_pIfTable->table[m_connections[m_connection_selected].index].dwOutOctets - m_connections[m_connection_selected].out_bytes;
@@ -2334,8 +2461,12 @@ BOOL CTrafficMonitorDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     if (uMsg > ID_SELECT_ALL_CONNECTION && uMsg <= ID_SELECT_ALL_CONNECTION + m_connections.size()) //选择了一个网络连接
     {
         m_connection_selected = uMsg - ID_SELECT_ALL_CONNECTION - 1;
-        theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
-        m_connection_name_preferd = theApp.m_cfg_data.m_connection_name;
+        //m_connection_name 会被工作线程读取，跨线程写入需加锁（见 m_settings_str_critical 说明）
+        {
+            CSingleLock sync(&m_settings_str_critical, TRUE);
+            theApp.m_cfg_data.m_connection_name = GetConnection(m_connection_selected).description_2;
+            m_connection_name_preferd = theApp.m_cfg_data.m_connection_name;
+        }
         theApp.m_cfg_data.m_auto_select = false;
         theApp.m_cfg_data.m_select_all = false;
         theApp.SaveConfig();
@@ -3004,6 +3135,9 @@ afx_msg LRESULT CTrafficMonitorDlg::OnHardwareMonitorError(WPARAM wParam, LPARAM
 
 afx_msg LRESULT CTrafficMonitorDlg::OnMonitorInfoUpdated(WPARAM wParam, LPARAM lParam)
 {
+    //应用工作线程暂存的硬件名称回退值（如配置的硬盘已不存在时回退到第一块硬盘）
+    ApplyPendingHwNames();
+
     Invalidate(FALSE);      //刷新窗口信息
 
     //更新鼠标提示
@@ -3016,6 +3150,17 @@ afx_msg LRESULT CTrafficMonitorDlg::OnMonitorInfoUpdated(WPARAM wParam, LPARAM l
     //更新任务栏窗口鼠标提示
     if (IsTaskbarWndValid())
         m_tBarDlg->UpdateToolTips();
+    return 0;
+}
+
+//响应工作线程的 WM_REINIT_CONNECTION：IniConnection/AutoSelect 会释放重建 m_pIfTable、
+//修改 m_connections 和菜单，只允许在 UI 线程执行（wParam=0执行IniConnection，1执行AutoSelect）
+afx_msg LRESULT CTrafficMonitorDlg::OnReinitConnection(WPARAM wParam, LPARAM lParam)
+{
+    if (wParam == 1)
+        AutoSelect();
+    else
+        IniConnection();
     return 0;
 }
 

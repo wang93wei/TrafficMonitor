@@ -656,7 +656,11 @@ UINT CTrafficMonitorApp::InitOpenHardwareMonitorLibThreadFunc(LPVOID lpParam)
     theApp.m_pMonitor = OpenHardwareMonitorApi::CreateInstance();
     if (theApp.m_pMonitor == nullptr)
     {
+        //弹窗前必须先释放临界区：持有 m_minitor_lib_critical 期间弹模态框会阻塞监控工作线程，
+        //导致退出时 ExitMonitorThread 等待超时后析构成员引发 use-after-free
+        sync.Unlock();
         AfxMessageBox(OpenHardwareMonitorApi::GetErrorMessage().c_str(), MB_ICONERROR | MB_OK);
+        sync.Lock();
     }
     //设置硬件监控的启用状态
     theApp.UpdateOpenHardwareMonitorEnableState();
@@ -1531,7 +1535,14 @@ void* CTrafficMonitorApp::GetMainWindowHwnd()
 
 void* CTrafficMonitorApp::GetTaskbarWindowHwnd()
 {
-    return CTrafficMonitorDlg::Instance()->GetTaskbarWindow()->GetSafeHwnd();
+    // 插件可能在主对话框创建前（OnInitialize 时）或销毁后调用，Instance() 会返回空指针
+    CTrafficMonitorDlg* pMainWnd = CTrafficMonitorDlg::Instance();
+    if (pMainWnd == nullptr)
+        return nullptr;
+    CTaskBarDlg* pTaskbarWnd = pMainWnd->GetTaskbarWindow();
+    if (pTaskbarWnd == nullptr)
+        return nullptr;
+    return pTaskbarWnd->GetSafeHwnd();
 }
 
 const wchar_t* CTrafficMonitorApp::GetStringRes(const wchar_t* key, const wchar_t* section)

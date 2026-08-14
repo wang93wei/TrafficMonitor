@@ -7,6 +7,7 @@
 
 #include "NetworkInfoDlg.h"
 #include "afxwin.h"
+#include <afxmt.h>
 #include "StaticEx.h"
 #include "Common.h"
 #include "TaskBarDlg.h"
@@ -61,6 +62,9 @@ protected:
     vector<NetWorkConection> m_connections; //保存获取到的要显示到“选择网卡”菜单项中的所有网络连接
     MIB_IFTABLE* m_pIfTable;
     DWORD m_dwSize{};	//m_pIfTable的大小
+    // m_pIfTable 与 m_connections 会被监控工作线程（GetIfTable 刷新/读取）和 UI 线程（IniConnection 释放重建）
+    // 并发访问，跨线程访问必须持有 m_iftable_critical（CRITICAL_SECTION 可重入，允许嵌套加锁）
+    CCriticalSection m_iftable_critical;
     int m_connection_selected{ 0 }; //要显示流量的连接的序号
     unsigned __int64 m_in_bytes{};        //当前已接收的字节数
     unsigned __int64 m_out_bytes{};   //当前已发送的字节数
@@ -132,10 +136,24 @@ protected:
     string m_connection_name_preferd{ theApp.m_cfg_data.m_connection_name };          //保存用户手动选择的网络连接名称
 
     void DoMonitorAcquisition();    //获取一次监控信息
+#ifndef WITHOUT_TEMPERATURE
+    void AcquireHardwareMonitorInfo(bool& cpu_freq_acquired, bool& gpu_usage_acquired);   //获取温度等硬件监控信息（仅工作线程调用；内部在临界区内对 m_pMonitor 判空）
+#endif
     static UINT MonitorThreadCallback(LPVOID dwUser);   //获取监控信息的线程函数
     bool m_monitor_data_required{ false };          //线程中需要获取监控数据标志，当需要获取监控数据时置为true，获取到一次监控数据时置为false
     bool m_is_thread_exit{ false }; //线程退出标志
     CEvent m_threadExitEvent;       //用于通知主线程工作线程已退出
+
+    // 跨线程读写的设置字符串：theApp.m_cfg_data.m_connection_name、theApp.m_general_data.hard_disk_name、cpu_core_name。
+    // string/wstring 赋值会释放旧缓冲区，跨线程读写必须持有 m_settings_str_critical，否则另一线程可能读到已释放的内存
+    CCriticalSection m_settings_str_critical;
+    // 工作线程发现的硬件名称回退值（如配置的硬盘已不存在时回退到第一块硬盘）。
+    // 工作线程不直接写 theApp 的设置（见上），先暂存在此（受 m_settings_str_critical 保护），
+    // 由 UI 线程在 OnMonitorInfoUpdated 中调用 ApplyPendingHwNames() 应用
+    wstring m_pending_hard_disk_name;
+    bool m_pending_hard_disk_name_valid{ false };
+    wstring m_pending_cpu_core_name;
+    bool m_pending_cpu_core_name_valid{ false };
 
 #ifndef WITHOUT_TEMPERATURE
     int m_hardware_monitor_error_cnt{ 0 };      //硬件监控连续错误计数
@@ -165,6 +183,10 @@ protected:
     //void UpdateConnections();
     //自动选择连接
     void IniConnection();   //初始化连接
+
+    void SetPendingHardDiskName(const wstring& name);   //工作线程暂存回退的硬盘名（UI线程稍后通过 ApplyPendingHwNames 应用）
+    void SetPendingCpuCoreName(const wstring& name);    //工作线程暂存回退的CPU核心名
+    void ApplyPendingHwNames();     //UI线程应用暂存的硬件名称（在 OnMonitorInfoUpdated 中调用）
 
     MIB_IFROW GetConnectIfTable(int connection_index);    //获取当前选择的网络连接的MIB_IFROW对象。connection_index为m_connections中的索引
     NetWorkConection GetConnection(int connection_index); //获取当前选择的网络连接的NetWorkConection对象。connection_index为m_connections中的索引
@@ -274,6 +296,7 @@ protected:
     afx_msg LRESULT OnDpichanged(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnTaskbarWndClosed(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnMonitorInfoUpdated(WPARAM wParam, LPARAM lParam);
+    afx_msg LRESULT OnReinitConnection(WPARAM wParam, LPARAM lParam);   //响应工作线程的 WM_REINIT_CONNECTION，在 UI 线程执行 IniConnection/AutoSelect
     afx_msg LRESULT OnHardwareMonitorError(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnDisplaychange(WPARAM wParam, LPARAM lParam);
     afx_msg LRESULT OnReopenTaksbarWnd(WPARAM wParam, LPARAM lParam);

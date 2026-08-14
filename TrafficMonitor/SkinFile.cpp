@@ -578,7 +578,7 @@ void CSkinFile::DrawInfo(CDC* pDC, bool show_more_info)
     {
         HDC hdcMemory = CreateCompatibleDC(pDC->GetSafeHdc());
         HBITMAP hBitMap = CreateCompatibleBitmap(pDC->GetSafeHdc(), rect.Width(), rect.Height());
-        SelectObject(hdcMemory, hBitMap);
+        HGDIOBJ hOldBitmap = ::SelectObject(hdcMemory, hBitMap);
 
         BLENDFUNCTION bf{};
         bf.BlendOp = AC_SRC_OVER;
@@ -587,27 +587,31 @@ void CSkinFile::DrawInfo(CDC* pDC, bool show_more_info)
         bf.SourceConstantAlpha = m_alpha; // 窗口透明度最大为255，最小为0
 
         HWND hWnd = theApp.m_pMainWnd->GetSafeHwnd();
-        //绘制背景
-        CDrawCommonEx gdiplus_drawer;
-        gdiplus_drawer.Create(CDC::FromHandle(hdcMemory));
-        Gdiplus::Image* background_image{ show_more_info ? m_background_png_l : m_background_png_s };
-        gdiplus_drawer.DrawImage(background_image, CPoint(0, 0), rect.Size(), CDrawCommon::StretchMode::FILL);
-        
-        //保存完全透明的像素点
-        std::set<DrawCommonHelper::Point> alpha_points;
-        DrawCommonHelper::GetBitmapAlphaPixel(hBitMap, alpha_points);
+        {
+            //绘制背景。gdiplus_drawer 的 Graphics 包装了 hdcMemory，
+            //必须在 DeleteDC 前析构，因此用单独的作用域约束其生命周期
+            CDrawCommonEx gdiplus_drawer;
+            gdiplus_drawer.Create(CDC::FromHandle(hdcMemory));
+            Gdiplus::Image* background_image{ show_more_info ? m_background_png_l : m_background_png_s };
+            gdiplus_drawer.DrawImage(background_image, CPoint(0, 0), rect.Size(), CDrawCommon::StretchMode::FILL);
 
-        //绘制显示项目
-        DrawItemsInfo(gdiplus_drawer, layout, m_font);
+            //保存完全透明的像素点
+            std::set<DrawCommonHelper::Point> alpha_points;
+            DrawCommonHelper::GetBitmapAlphaPixel(hBitMap, alpha_points);
 
-        //找出绘制显示项目前不透明，但是绘制后透明的点，并修正其alpha值
-        DrawCommonHelper::FixBitmapTextAlpha(hBitMap, m_alpha, alpha_points);
+            //绘制显示项目
+            DrawItemsInfo(gdiplus_drawer, layout, m_font);
+
+            //找出绘制显示项目前不透明，但是绘制后透明的点，并修正其alpha值
+            DrawCommonHelper::FixBitmapTextAlpha(hBitMap, m_alpha, alpha_points);
+        }
 
         SIZE sizeWindow = rect.Size();
         POINT ptSrc = { 0,0 };
         ::UpdateLayeredWindow(hWnd, pDC->GetSafeHdc(), nullptr, &sizeWindow, hdcMemory, &ptSrc, 0, &bf, ULW_ALPHA);
 
-        gdiplus_drawer.GetGraphics()->ReleaseHDC(hdcMemory);
+        //选回旧位图后才能删除，否则 DeleteObject 失败导致每次重绘泄漏一个 HBITMAP
+        ::SelectObject(hdcMemory, hOldBitmap);
         DeleteObject(hBitMap);
         DeleteDC(hdcMemory);
     }

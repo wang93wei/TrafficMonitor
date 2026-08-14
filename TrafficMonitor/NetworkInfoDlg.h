@@ -12,7 +12,9 @@ class CNetworkInfoDlg : public CBaseDialog
     DECLARE_DYNAMIC(CNetworkInfoDlg)
 
 public:
-    CNetworkInfoDlg(vector<NetWorkConection>& adapters, MIB_IFROW* pIfRow, int connection_selected, CWnd* pParent = NULL);   // 标准构造函数
+    //传入连接列表和 IfTable 数据的拷贝：对话框模态显示期间主窗口可能重新初始化连接
+    //（释放重建 m_pIfTable、清空 m_connections），持有引用/裸指针会变成悬空指针
+    CNetworkInfoDlg(vector<NetWorkConection> adapters, vector<MIB_IFROW> if_rows, int connection_selected, CWnd* pParent = NULL);   // 标准构造函数
     virtual ~CNetworkInfoDlg();
 
     // 对话框数据
@@ -24,8 +26,8 @@ public:
 
 protected:
 
-    vector<NetWorkConection>& m_connections;
-    MIB_IFROW* m_pIfRow;
+    vector<NetWorkConection> m_connections;     //打开对话框时的连接列表快照
+    vector<MIB_IFROW> m_if_rows;                //打开对话框时的 IfTable 数据快照
     int m_connection_selected;		//当前对话框显示的连接
     int m_current_connection;		//初始选择的连接
 

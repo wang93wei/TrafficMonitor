@@ -371,9 +371,11 @@ HRESULT CD3D10DrawCallWaiter::Wait() const noexcept
     }
     const auto start_time = std::chrono::system_clock::now();
     using namespace std::chrono_literals;
+    //轮询直到查询数据就绪（GetData 返回 S_FALSE 表示尚未就绪），最多等待1500毫秒
     do
     {
+        Sleep(1);
         result = m_p_query->GetData(NULL, 0, 0);
-    } while (result != S_FALSE && std::chrono::system_clock::now() - start_time < 1500ms);
+    } while (result == S_FALSE && std::chrono::system_clock::now() - start_time < 1500ms);
     return result;
 }

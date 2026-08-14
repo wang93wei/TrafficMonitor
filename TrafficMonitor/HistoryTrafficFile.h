@@ -35,7 +35,9 @@ private:
 	void MormalizeData();		//将历史流量数据排序并合并相同项
 	bool IsTodayRecord() const;	//检查今天的记录日期是否正确
 	void UpdateCache() const;	//更新缓存（用于统计功能）
+	void WriteFileHeader(ofstream& file) const;		//写入文件第一行（lines计数）
 	void WriteTrafficRecord(ofstream& file, const HistoryTraffic& traffic) const;	//写入一条流量记录到文件
+	bool ReplaceWithTmpFile(const wstring& tmp_path) const;		//用临时文件原子替换历史流量文件
 	HistoryTraffic CreateTodayTraffic() const;	//创建今天的记录（日期为当前日期，流量为0）
 	void InvalidateCache() const { m_cache_dirty = true; }	//标记缓存过期
 

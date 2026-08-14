@@ -74,8 +74,10 @@ using std::ofstream;
 #define WM_REOPEN_TASKBAR_WND (WM_USER+1008)        //重新打开任务栏窗口
 #define WM_SETTINGS_APPLIED (WM_USER+1009)          //在选项设置中点击了“应用”按钮
 #define WM_HARDWARE_MONITOR_ERROR (WM_USER+1010)    //硬件监控出错（由后台线程 PostMessage 到 UI，wParam=0表示普通错误弹窗，1表示自动禁用提示）
+#define WM_REINIT_CONNECTION (WM_USER+1011)         //工作线程检测到需要重新初始化网络连接时 PostMessage 到 UI 线程（wParam=0执行IniConnection，1执行AutoSelect）。
+                                                    //IniConnection/AutoSelect 会释放重建 m_pIfTable、修改 m_connections 和菜单，不能在工作线程直接调用
 
-#define WM_NEXT_USER_MSG (WM_USER+1011)
+#define WM_NEXT_USER_MSG (WM_USER+1012)
 
 //#define CONFIG_PATH _T(".\\config.ini")
 //#define CONFIG_PATHA ".\\config.ini"
