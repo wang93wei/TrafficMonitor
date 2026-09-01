@@ -1051,6 +1051,9 @@ BOOL CTrafficMonitorApp::InitInstance()
     Gdiplus::GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
+    //初始时使用屏幕DPI
+    DPIFromWindow(nullptr);
+
     //载入插件
     LoadPluginDisabledSettings();
     m_plugins.LoadPlugins();

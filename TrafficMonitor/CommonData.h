@@ -177,13 +177,10 @@ struct LanguageInfo
     wstring translator_url;
     WORD language_id{};
 
-    bool operator==(const LanguageInfo& another) const
-    {
-        return bcp_47 == another.bcp_47 && display_name == another.display_name && translator == another.translator;
-    }
-
+    bool operator==(const LanguageInfo& another) const;
     wstring toConfigString() const;
     void fromConfigString(const wstring& config_str);
+    bool isEmpty() const;
 };
 
 //选项设置数据

@@ -293,6 +293,15 @@ COLORREF TaskBarSettingData::GetUsageGraphColor() const
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+bool LanguageInfo::operator==(const LanguageInfo& another) const
+{
+    if (isEmpty() && another.isEmpty())
+        return true;
+    return bcp_47 == another.bcp_47 && display_name == another.display_name && translator == another.translator;
+}
+
+
 wstring LanguageInfo::toConfigString() const
 {
     return bcp_47 + L"|" + display_name + L"|" + translator;
@@ -315,4 +324,9 @@ void LanguageInfo::fromConfigString(const wstring& config_str)
         translator = parts[2];
     }
     language_id = LocaleNameToLCID(bcp_47.c_str(), 0);
+}
+
+bool LanguageInfo::isEmpty() const
+{
+    return bcp_47 == L"0" || bcp_47.empty();
 }

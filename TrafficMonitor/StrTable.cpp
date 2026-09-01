@@ -76,6 +76,9 @@ void CStrTable::Init()
     ReadStringtableFronIni(ini);
     LanguageInfoFromIni(m_language_info, ini);
 
+    //获取当前系统默认语言
+    DWORD cur_system_language_id = GetUserDefaultUILanguage();
+
     //从外部language文件夹获取语言文件
     vector<wstring> files;
     std::wstring language_dir;
@@ -93,7 +96,20 @@ void CStrTable::Init()
         LanguageInfoFromIni(language_info, ini_file);
         language_info.language_id = LocaleNameToLCID(language_info.bcp_47.c_str(), 0);  //根据语言bcp-47代码获取语言id
         //从外部语言文件读取到当前语言，先从外部语言文件加载
-        if (language_info == theApp.m_general_data.language)
+        bool is_current_language = false;
+        LanguageInfo settings_language = theApp.m_general_data.language;
+        //如果设置中的语言为空，即选择了“跟随系统”，则根据当前系统语言查找
+        if (settings_language.isEmpty())
+        {
+            if (cur_system_language_id == language_info.language_id)
+                is_current_language = true;
+        }
+        else
+        {
+            if (language_info == settings_language)
+                is_current_language = true;
+        }
+        if (is_current_language)
         {
             m_language_info = language_info;
             ReadStringtableFronIni(ini_file);
