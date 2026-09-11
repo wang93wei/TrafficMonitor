@@ -61,9 +61,47 @@ reconfiguration), use the existing reopen path — `WM_REOPEN_TASKBAR_WND`
 (`stdafx.h:72`) and `RESTART_TASKBAR_TIMER` (1240). Do not create a parallel
 recreate path.
 
+## Taskbar item colors
+
+Taskbar items are drawn in two graph modes, and both resolve color through the
+same seam:
+
+| Mode | Function | Setting |
+|------|----------|---------|
+| Bar / status bar | `CTaskBarDlg::TryDrawStatusBar(drawer, rect_bar, item, usage_percent)` | `show_status_bar`, `show_netspeed_figure` |
+| Plot / history | `CTaskBarDlg::TryDrawGraph(drawer, value_rect, item_type)` | graph display mode |
+
+`TaskBarSettingData` owns the colors (`TrafficMonitor/CommonData.h`):
+
+- `COLORREF GetUsageGraphColor() const` — the global/effective graph color,
+  including the `graph_color_following_system` accent resolution.
+- `COLORREF GetUsageGraphColor(CommonDisplayItem item) const` — per-item
+  override, falling back to the no-argument overload when
+  `specify_each_item_graph_color` is off or the item has no entry.
+
+Rules:
+
+- **Resolve color inside the two draw functions, not at the call sites.** This
+  is why `CClassicalTaskbarDlg` / `CWin11TaskbarDlg` / `CWineTaskbarDlg` need no
+  per-variant change — a new variant inherits the behavior automatically.
+- Do not branch on `specify_each_item_graph_color` in drawing code; the
+  item-aware `GetUsageGraphColor` overload is the single decision point.
+- Both built-in and plugin items convert implicitly to `CommonDisplayItem`, so
+  one signature serves both — do not add parallel `DisplayItem`/`IPluginItem`
+  overloads.
+- The dashed-box outline (`show_graph_dashed_box`) uses the same resolved color
+  as the fill.
+- Items without a configured color must fall back to the global color, never to
+  an uninitialized `COLORREF`.
+
+Analogous behavior applies to per-item *text* colors (`text_colors`), which
+predate graph colors and follow the same item-keyed map shape.
+
 Reference files:
 - `TrafficMonitor/IDrawCommon.h`, `TrafficMonitor/DrawCommon.h`,
   `TrafficMonitor/TaskBarDlgDrawCommon.h`
 - `TrafficMonitor/TaskBarDlg.h`, `TrafficMonitor/ClassicalTaskbarDlg.h`,
   `TrafficMonitor/Win11TaskbarDlg.h`, `TrafficMonitor/WineTaskbarDlg.h`
 - `TrafficMonitor/SkinFile.h`, `TrafficMonitor/SkinManager.h`
+- `TrafficMonitor/CommonData.h` (`TaskBarSettingData`),
+  `TrafficMonitor/TaskBarSettingsDlg.h`, `TrafficMonitor/TaskbarColorDlg.h`

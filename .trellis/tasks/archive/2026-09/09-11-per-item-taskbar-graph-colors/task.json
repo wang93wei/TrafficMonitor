@@ -1,0 +1,53 @@
+{
+  "id": "per-item-taskbar-graph-colors",
+  "name": "per-item-taskbar-graph-colors",
+  "title": "Add per-item taskbar graph colors",
+  "description": "Port the per-item taskbar graph color feature from the upstream fork, including settings persistence, per-item color editing, bar/plot rendering, and localization.",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "taskbar",
+  "package": "cpp-mfc",
+  "priority": "P2",
+  "creator": "ObnubiladO",
+  "assignee": "ObnubiladO",
+  "createdAt": "2026-09-11",
+  "completedAt": "2026-09-11",
+  "branch": "wang93wei/per-item-taskbar-graph-colors",
+  "base_branch": "backup-master",
+  "worktree_path": null,
+  "commit": "2f42c04",
+  "pr_url": "https://github.com/wang93wei/TrafficMonitor/pull/1",
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "TrafficMonitor/CommonData.h",
+    "TrafficMonitor/SettingsHelper.cpp",
+    "TrafficMonitor/TaskBarDlg.cpp",
+    "TrafficMonitor/TaskBarSettingsDlg.cpp",
+    "TrafficMonitor/TaskbarColorDlg.cpp",
+    "TrafficMonitor/TaskbarDefaultStyle.cpp",
+    "TrafficMonitor/language/English.ini",
+    "TrafficMonitor/language/Simplified_Chinese.ini"
+  ],
+  "notes": "Retrospective record: implemented and verified on a separate clone, delivered as PR #1. Ported from original-project commits 6b46016 and 061b67b; BOM restore in 2f42c04. Verified by full TrafficMonitor.sln and Lite builds for x64/x86 plus manual runtime testing. Known limitation: graph color INI keys are upserted, never pruned.",
+  "meta": {
+    "source_commits": [
+      "6b46016",
+      "061b67b"
+    ],
+    "fork_baseline": "72c717d",
+    "port_commits": [
+      "1f5dda4",
+      "6dac39d",
+      "2f42c04"
+    ],
+    "verified_builds": [
+      "Release|x64 (TrafficMonitor.sln)",
+      "Release|x86 (TrafficMonitor.sln)",
+      "Release (lite)|x64",
+      "Release (lite)|x86"
+    ],
+    "manual_verification": true
+  }
+}

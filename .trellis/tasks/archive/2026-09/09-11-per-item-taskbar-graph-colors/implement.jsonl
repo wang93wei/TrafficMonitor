@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/cpp-mfc/index.md", "reason": "Package entry point with the pre-development checklist and quality check for C++/MFC work."}
+{"file": ".trellis/spec/cpp-mfc/drawing-taskbar.md", "reason": "Taskbar drawing seams: CTaskBarDlg variants, IDrawCommon, and the rule against a second drawing abstraction."}
+{"file": ".trellis/spec/cpp-mfc/settings-strings.md", "reason": "Persisted settings models, CSettingsHelper accessors, and the localized-string rules the new IDS_ key must follow."}
+{"file": ".trellis/spec/cpp-mfc/coding-conventions.md", "reason": "C++20/MFC idioms, compile guards, and naming conventions used by the ported code."}

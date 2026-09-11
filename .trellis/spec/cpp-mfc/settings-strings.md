@@ -28,6 +28,37 @@ Persisted struct examples in `TrafficMonitor/CommonData.h`:
 fields to the relevant struct in `CommonData.h`, then add read/write accessors
 in `CSettingsHelper`.
 
+## Per-item color maps
+
+Per-item colors are `std::map<CommonDisplayItem, ...>` members of
+`TaskBarSettingData`, persisted key-by-key through `CSettingsHelper`:
+
+| Concern | Accessors | INI section |
+|---------|-----------|-------------|
+| Per-item text colors | `LoadTaskbarWndColors` / `SaveTaskbarWndColors` | key name supplied per call |
+| Per-item graph colors | `LoadTaskbarWndGraphColors` / `SaveTaskbarWndGraphColors` | `task_bar_graph_color`, `taskbar_default_style_graph_color_<n>` |
+
+Rules:
+
+- Key each entry with `CommonDisplayItem::GetItemIniKeyName()`. It is the shared
+  key scheme for built-in and plugin items, so saved colors follow the item
+  rather than its position in the display order.
+- Loading iterates `theApp.m_plugins.AllDisplayItemsWithPlugins()` and only
+  assigns entries actually present in the INI. Absent entries stay out of the
+  map and fall back to the global color — never seed a map entry with a
+  placeholder to "fill the gap".
+- **Known pitfall — stale keys are never pruned.** `WriteInt` only inserts or
+  replaces; `CIniHelper` has no key-delete, so `SaveTaskbarWndGraphColors`
+  cannot express removal. Replacing a map (for example
+  `CTaskbarDefaultStyle::ApplyDefaultStyle` overwriting `graph_colors` with a
+  preset's empty map) therefore leaves the old keys on disk, and they reload
+  after a restart. This is accepted current behavior, not a bug to rediscover:
+  if you need true removal, add an explicit delete/clear accessor to
+  `CIniHelper` first and use it consistently for both color maps.
+- When adding a per-item color setting, wire the whole chain — struct field,
+  load, save, style-preset load/save/apply, dialog seeding, and change
+  detection (`IsStyleModified`) — or the setting silently fails to persist.
+
 ## Options dialog flow
 
 `COptionsDlg` (`TrafficMonitor/OptionsDlg.*`) copies settings struct data into

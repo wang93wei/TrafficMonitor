@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/cpp-mfc/index.md", "reason": "Quality Check section that the final full-scope verification pass must satisfy."}
+{"file": ".trellis/spec/cpp-mfc/quality-testing.md", "reason": "Build-verification and manual-smoke expectations for UI/taskbar changes, which is how this task was validated."}
+{"file": ".trellis/spec/cpp-mfc/drawing-taskbar.md", "reason": "Verify graph color resolution happens at the shared rendering seam instead of per taskbar variant."}
+{"file": ".trellis/spec/cpp-mfc/settings-strings.md", "reason": "Verify settings persistence and localization rules, including the per-item color key scheme."}
